@@ -187,6 +187,28 @@ class WorkingCalendar:
             day += timedelta(days=1)
             probe = None
 
+    def working_hours_between(self, start: datetime, end: datetime) -> float:
+        """Return configured working hours inside [start, end)."""
+        if end <= start:
+            return 0.0
+
+        start_utc = start.astimezone(UTC)
+        end_utc = end.astimezone(UTC)
+        day = self._local_date(start_utc)
+        last_day = self._local_date(end_utc)
+        total_seconds = 0.0
+
+        while day <= last_day:
+            for period_start, period_end in self._periods_for_date(day):
+                overlap_start = max(start_utc, period_start)
+                overlap_end = min(end_utc, period_end)
+                if overlap_end > overlap_start:
+                    total_seconds += (overlap_end - overlap_start).total_seconds()
+            day += timedelta(days=1)
+
+        return total_seconds / 3600
+
+
     def add_working_hours(self, start: datetime, hours: float) -> datetime:
         """Add non-negative work duration, skipping breaks and non-working days."""
         if hours < 0:
