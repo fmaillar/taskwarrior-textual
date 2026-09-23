@@ -142,7 +142,7 @@ class PlanningForm(ModalScreen[dict[str, str] | None]):
 
     def __init__(self, task: Task, candidates: list[Task]) -> None:
         super().__init__()
-        self.task = task
+        self.planned_task = task
         self.candidates = candidates
         rows = [
             f"{candidate.short_uuid} | {candidate.project or '(none)'} | "
@@ -164,7 +164,7 @@ class PlanningForm(ModalScreen[dict[str, str] | None]):
         )
 
     def compose(self) -> ComposeResult:
-        task = self.task
+        task = self.planned_task
         with Vertical(id="planning-form"):
             yield Label(
                 f"Planning: {task.short_uuid} — {task.description}"
