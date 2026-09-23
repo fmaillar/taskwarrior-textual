@@ -20,10 +20,10 @@ _______________ coverage: platform linux, python 3.13.5-final-0 ________________
 
 Name    Stmts   Miss Branch BrPart  Cover   Missing
 ---------------------------------------------------
-TOTAL    2052      0    592      0   100%
+TOTAL    2070      0    592      0   100%
 
-7 files skipped due to complete coverage.
+9 files skipped due to complete coverage.
 Coverage HTML written to dir htmlcov
 Coverage XML written to file reports/coverage.xml
-Required test coverage of 95.0% reached. Total coverage: 100.00%
-======================= 370 passed in 103.92s (0:01:43) ========================
+Required test coverage of 100.0% reached. Total coverage: 100.00%
+======================== 370 passed in 91.32s (0:01:31) ========================
