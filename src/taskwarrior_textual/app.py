@@ -552,6 +552,46 @@ class DependencyScreen(ModalScreen[None]):
         self.dismiss(None)
 
 
+class ScheduleProposalScreen(ModalScreen[bool]):
+    """Preview an auto-schedule proposal before applying it."""
+
+    CSS = """
+    ScheduleProposalScreen { align: center middle; }
+    #schedule-proposal-box {
+        width: 92%;
+        max-width: 130;
+        height: auto;
+        max-height: 90%;
+        padding: 1 2;
+        border: round $accent;
+        background: $surface;
+    }
+    #schedule-proposal-buttons { height: auto; margin-top: 1; }
+    #schedule-proposal-buttons Button { margin-right: 1; }
+    """
+
+    def __init__(self, body: str, *, can_apply: bool) -> None:
+        super().__init__()
+        self.body = body
+        self.can_apply = can_apply
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="schedule-proposal-box"):
+            yield Label("Project auto-schedule")
+            yield Static(self.body, id="schedule-proposal-body")
+            with Horizontal(id="schedule-proposal-buttons"):
+                yield Button(
+                    "Apply",
+                    variant="primary",
+                    id="schedule-apply",
+                    disabled=not self.can_apply,
+                )
+                yield Button("Cancel", id="schedule-cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "schedule-apply")
+
+
 class ProjectDashboardScreen(ModalScreen[None]):
     """Read-only consolidated planning dashboard for one project."""
 
@@ -744,6 +784,7 @@ class TaskwarriorApp(App[None]):
         ("e", "edit_task", "Edit"),
         ("shift+e", "edit_planning", "Planning"),
         ("s", "start_task", "Start"),
+        ("shift+s", "auto_schedule_project", "Auto schedule"),
         ("x", "stop_task", "Stop"),
         ("d", "done_task", "Done"),
         ("shift+d", "delete_task", "Delete"),
@@ -1766,6 +1807,82 @@ class TaskwarriorApp(App[None]):
         return "\n".join(lines)
 
     @staticmethod
+    def _schedule_proposal(
+        project: str,
+        project_tasks: list[Task],
+        expanded_tasks: list[Task],
+        settings: PlanningSettings | None = None,
+        *,
+        now: datetime | None = None,
+        tracked_hours: dict[str, float] | None = None,
+    ) -> tuple[str, dict[str, str]]:
+        """Build an auto-schedule preview for unscheduled inactive project tasks."""
+        resolved_settings = settings or PlanningSettings()
+        resolved_now = now or datetime.now(UTC)
+        graph = build_planning_graph(expanded_tasks)
+        if graph.cyclic:
+            return "Auto-schedule unavailable: dependency cycle detected.", {}
+
+        schedule = build_absolute_schedule(
+            graph,
+            resolved_settings,
+            now=resolved_now,
+            tracked_hours=tracked_hours,
+            origin=resolved_now,
+        )
+        assert schedule is not None
+
+        project_uuids = {task.uuid for task in project_tasks}
+        changes: dict[str, str] = {}
+        rows: list[str] = []
+        for task in sorted(
+            project_tasks,
+            key=lambda item: (item.short_uuid, item.uuid),
+        ):
+            if (
+                task.uuid not in schedule.starts
+                or task.scheduled
+                or task.active
+                or task.status in {"completed", "deleted"}
+            ):
+                continue
+            proposed = schedule.starts[task.uuid]
+            changes[task.uuid] = proposed.strftime("%Y%m%dT%H%M%SZ")
+            rows.append(
+                f"{task.short_uuid} | — | {proposed:%Y-%m-%d %H:%M} UTC | "
+                f"{task.description}"
+            )
+
+        lines = [
+            f"Auto-schedule proposal: {project or '(none)'}",
+            f"Planning origin: {schedule.origin:%Y-%m-%d %H:%M} UTC",
+            f"Project tasks to schedule: {len(changes)}",
+        ]
+        if changes:
+            lines.extend(
+                [
+                    "",
+                    "UUID | Current scheduled | Proposed scheduled | Description",
+                    *rows,
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "",
+                    "No unscheduled inactive project tasks require changes.",
+                ]
+            )
+
+        external = sum(
+            task.uuid not in project_uuids
+            for task in expanded_tasks
+        )
+        if external:
+            lines.append(f"External dependencies used for planning: {external}")
+        return "\n".join(lines), changes
+
+    @staticmethod
     def _project_dashboard(
         project: str,
         project_tasks: list[Task],
@@ -2356,6 +2473,62 @@ class TaskwarriorApp(App[None]):
                     tracked_hours=tracked_hours,
                 )
             )
+        )
+
+    def action_auto_schedule_project(self) -> None:
+        """Preview and optionally apply an auto-schedule for the selected project."""
+        selected = self._selected_task()
+        if selected is None:
+            return
+
+        project_tasks = [
+            task
+            for task in self.view_tasks
+            if task.project == selected.project
+        ]
+        try:
+            expanded_tasks = self.client.expand_dependencies(
+                project_tasks,
+                self.planning_settings.dependency_depth,
+            )
+        except TaskwarriorError as exc:
+            self._show_error(exc)
+            return
+
+        context = self._tracked_planning_context(expanded_tasks)
+        if context is None:
+            return
+        tracked_hours, now = context
+        body, changes = self._schedule_proposal(
+            selected.project,
+            project_tasks,
+            expanded_tasks,
+            self.planning_settings,
+            now=now,
+            tracked_hours=tracked_hours,
+        )
+
+        def apply(confirmed: bool) -> None:
+            if not confirmed or not changes:
+                return
+            try:
+                for task in sorted(
+                    project_tasks,
+                    key=lambda item: (item.short_uuid, item.uuid),
+                ):
+                    scheduled = changes.get(task.uuid)
+                    if scheduled is None:
+                        continue
+                    self.client.modify_scheduled(task.short_uuid, scheduled)
+            except TaskwarriorError as exc:
+                self.action_refresh_tasks()
+                self._show_error(exc)
+                return
+            self.action_refresh_tasks()
+
+        self.push_screen(
+            ScheduleProposalScreen(body, can_apply=bool(changes)),
+            apply,
         )
 
     def action_show_project_dashboard(self) -> None:
