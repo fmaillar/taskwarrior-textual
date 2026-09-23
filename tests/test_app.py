@@ -8,6 +8,7 @@ from taskwarrior_textual.app import (
     CriticalPathScreen,
     DependencyOverviewScreen,
     DependencyScreen,
+    GanttScreen,
     ProjectFilterForm,
     ProjectOverviewScreen,
     SearchForm,
@@ -31,6 +32,7 @@ TASK = Task(
     wait="20260924T080000Z",
     scheduled="20260924T090000Z",
     start="20260923T070000Z",
+    estimate_hours=2.5,
 )
 
 
@@ -76,6 +78,7 @@ class FakeUiClient:
         self.calls: list[tuple[str, str]] = []
         self.fail: str | None = None
         self.tasks = [TASK] if tasks is None else tasks
+        self.add_values: list[dict[str, str]] = []
         self.modify_values: list[dict[str, object]] = []
 
     def _maybe_fail(self, action: str) -> None:
@@ -95,6 +98,7 @@ class FakeUiClient:
     def add(self, **values: str) -> str:
         self._maybe_fail("add")
         self.calls.append(("add", values["description"]))
+        self.add_values.append(values)
         return "created"
 
     def modify(self, uuid_prefix: str, **values: object) -> str:
@@ -518,6 +522,124 @@ async def test_critical_path_key_opens_local_screen_without_refetch() -> None:
         assert not isinstance(app.screen, CriticalPathScreen)
 
 
+def test_gantt_summary_renders_dependency_schedule() -> None:
+    first = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Foundation",
+        status="pending",
+        estimate_hours=2.0,
+    )
+    parallel = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="Parallel",
+        status="pending",
+        estimate_hours=1.0,
+    )
+    middle = Task(
+        uuid="33333333-3333-3333-3333-333333333333",
+        description="Middle",
+        status="pending",
+        depends=(first.uuid,),
+        estimate_hours=3.0,
+    )
+    finish = Task(
+        uuid="44444444-4444-4444-4444-444444444444",
+        description="Finish",
+        status="pending",
+        depends=(middle.uuid, parallel.uuid),
+        estimate_hours=2.0,
+    )
+
+    summary = TaskwarriorApp._gantt_summary([finish, middle, parallel, first])
+
+    assert "Scale: 1 char = 1h | Project duration: 7.00h" in summary
+    assert "11111111 | 0.00-2.00h | ██ | Foundation" in summary
+    assert "22222222 | 0.00-1.00h | █ | Parallel" in summary
+    assert "33333333 | 2.00-5.00h |   ███ | Middle" in summary
+    assert "44444444 | 5.00-7.00h |      ██ | Finish" in summary
+
+
+def test_gantt_summary_marks_zero_estimates_and_unresolved_dependencies() -> None:
+    first = Task(
+        uuid="aaaaaaaa-1111-2222-3333-444444444444",
+        description="Unknown estimate",
+        status="pending",
+    )
+    second = Task(
+        uuid="bbbbbbbb-1111-2222-3333-444444444444",
+        description="External dependency",
+        status="pending",
+        depends=(first.uuid, "99999999-aaaa-bbbb-cccc-dddddddddddd"),
+        estimate_hours=1.0,
+    )
+
+    summary = TaskwarriorApp._gantt_summary([second, first])
+
+    assert "aaaaaaaa | 0.00-0.00h | · | Unknown estimate" in summary
+    assert "bbbbbbbb | 0.00-1.00h | █ | External dependency" in summary
+    assert "Unestimated tasks shown as ·: aaaaaaaa" in summary
+    assert "Unresolved dependencies ignored: bbbbbbbb -> 99999999" in summary
+
+
+def test_gantt_summary_refuses_cycles_and_handles_empty_view() -> None:
+    first = Task(
+        uuid="aaaaaaaa-1111-2222-3333-444444444444",
+        description="First",
+        status="pending",
+        depends=("bbbbbbbb-1111-2222-3333-444444444444",),
+        estimate_hours=1.0,
+    )
+    second = Task(
+        uuid="bbbbbbbb-1111-2222-3333-444444444444",
+        description="Second",
+        status="pending",
+        depends=(first.uuid,),
+        estimate_hours=1.0,
+    )
+
+    assert (
+        TaskwarriorApp._gantt_summary([first, second])
+        == "Gantt unavailable: dependency cycle detected."
+    )
+    assert TaskwarriorApp._gantt_summary([]) == "No tasks in current view."
+
+
+async def test_gantt_key_opens_local_screen_without_refetch() -> None:
+    first = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="First",
+        status="pending",
+        estimate_hours=2.0,
+    )
+    second = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="Second",
+        status="pending",
+        depends=(first.uuid,),
+        estimate_hours=3.0,
+    )
+    client = FakeUiClient(tasks=[second, first])
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial_view_calls = client.calls.count(("view", "pending"))
+
+        await pilot.press("shift+h")
+        await pilot.pause()
+
+        assert isinstance(app.screen, GanttScreen)
+        body = str(app.screen.query_one("#gantt-body").render())
+        assert "Project duration: 5.00h" in body
+        assert "11111111 | 0.00-2.00h | ██ | First" in body
+        assert "22222222 | 2.00-5.00h |   ███ | Second" in body
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, GanttScreen)
+
+
 def test_project_overview_groups_current_view_deterministically() -> None:
     summary = TaskwarriorApp._project_overview(SEARCH_TASKS)
 
@@ -598,6 +720,7 @@ async def test_edit_key_opens_prefilled_task_form() -> None:
         assert app.screen.query_one("#depends").value == (
             "11111111-1111-1111-1111-111111111111"
         )
+        assert app.screen.query_one("#estimate").value == "2.5"
 
 
 async def test_add_form_save_calls_client() -> None:
@@ -616,9 +739,11 @@ async def test_add_form_save_calls_client() -> None:
         form.query_one("#wait", Input).value = "2026-09-30 08:00"
         form.query_one("#scheduled", Input).value = "2026-09-30 09:00"
         form.query_one("#depends", Input).value = "aaaaaaaa, bbbbbbbb"
+        form.query_one("#estimate", Input).value = "1.5"
         form.on_button_pressed(Button.Pressed(form.query_one("#save", Button)))
         await pilot.pause()
     assert ("add", "New task") in client.calls
+    assert client.add_values[-1]["estimate"] == "1.5"
 
 
 async def test_add_form_cancel_does_not_create_task() -> None:
@@ -664,6 +789,7 @@ async def test_edit_form_save_calls_modify() -> None:
         form.query_one("#wait", Input).value = ""
         form.query_one("#scheduled", Input).value = "tomorrow 09:00"
         form.query_one("#depends", Input).value = "22222222"
+        form.query_one("#estimate", Input).value = "4"
         form.on_button_pressed(Button.Pressed(form.query_one("#save", Button)))
         await pilot.pause()
 
@@ -677,6 +803,7 @@ async def test_edit_form_save_calls_modify() -> None:
         "wait": "",
         "scheduled": "tomorrow 09:00",
         "depends": "22222222",
+        "estimate": "4",
         "previous_tags": ("mail", "rms"),
     }
 
