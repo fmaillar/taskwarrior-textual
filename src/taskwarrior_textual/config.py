@@ -162,8 +162,6 @@ class WorkingCalendar:
             remaining -= available
             current = self.next_working_time(period_end)
 
-        return current
-
     def deadline_for_date(self, value: str) -> datetime:
         """Return the end of the last work period for an ISO date."""
         target = date.fromisoformat(value)
