@@ -148,7 +148,6 @@ def build_planning_graph(tasks: list[Task]) -> PlanningGraph:
     )
 
 
-
 def build_relative_schedule(graph: PlanningGraph) -> RelativeSchedule | None:
     """Compute earliest/latest timing and slack for an acyclic graph."""
     if graph.cyclic:
@@ -196,7 +195,6 @@ def build_relative_schedule(graph: PlanningGraph) -> RelativeSchedule | None:
         critical=critical,
         duration=duration,
     )
-
 
 
 def parse_taskwarrior_datetime(value: str) -> datetime | None:
