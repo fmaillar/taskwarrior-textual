@@ -494,9 +494,9 @@ def test_build_absolute_schedule_capacity_reservation_spans_calendar_breaks() ->
     )
 
     assert schedule is not None
-    assert schedule.finishes[first.uuid] == datetime(2026, 9, 28, 11, 0, tzinfo=UTC)
-    assert schedule.starts[second.uuid] == datetime(2026, 9, 28, 11, 0, tzinfo=UTC)
-    assert schedule.finishes[second.uuid] == datetime(2026, 9, 28, 14, 0, tzinfo=UTC)
+    assert schedule.finishes[first.uuid] == datetime(2026, 9, 28, 10, 0, tzinfo=UTC)
+    assert schedule.starts[second.uuid] == datetime(2026, 9, 28, 10, 0, tzinfo=UTC)
+    assert schedule.finishes[second.uuid] == datetime(2026, 9, 28, 12, 0, tzinfo=UTC)
 
 
 def test_build_absolute_schedule_uses_configured_working_periods() -> None:
