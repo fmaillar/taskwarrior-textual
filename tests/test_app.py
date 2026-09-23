@@ -1970,6 +1970,46 @@ def test_resolve_planning_dependencies_rejects_self_unknown_and_ambiguous_prefix
         )
 
 
+def test_validate_planning_dependency_update_rejects_new_cycle() -> None:
+    first = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="First",
+        status="pending",
+        depends=("22222222-1111-1111-1111-111111111111",),
+    )
+    second = Task(
+        uuid="22222222-1111-1111-1111-111111111111",
+        description="Second",
+        status="pending",
+    )
+
+    with pytest.raises(TaskwarriorError, match="cycle"):
+        TaskwarriorApp._validate_planning_dependency_update(
+            second,
+            first.uuid,
+            [first, second],
+        )
+
+
+def test_validate_planning_dependency_update_accepts_acyclic_change() -> None:
+    first = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="First",
+        status="pending",
+    )
+    second = Task(
+        uuid="22222222-1111-1111-1111-111111111111",
+        description="Second",
+        status="pending",
+    )
+
+    TaskwarriorApp._validate_planning_dependency_update(
+        second,
+        first.uuid,
+        [first, second],
+    )
+
+
 def test_planning_form_initializes_fields_and_candidate_reference() -> None:
     target = Task(
         uuid="11111111-1111-1111-1111-111111111111",
@@ -2104,6 +2144,38 @@ async def test_planning_editor_updates_only_planning_fields_and_refreshes() -> N
             "estimate": "5.5",
         }
         assert client.calls.count(("view", "pending")) >= 2
+
+
+async def test_planning_editor_rejects_dependency_cycle_without_modification() -> None:
+    first = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="First",
+        status="pending",
+        depends=("22222222-1111-1111-1111-111111111111",),
+    )
+    second = Task(
+        uuid="22222222-1111-1111-1111-111111111111",
+        description="Second",
+        status="pending",
+    )
+    client = FakeUiClient(tasks=[second, first])
+    client.expanded_tasks = [second, first]
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+e")
+        await pilot.pause()
+
+        assert isinstance(app.screen, PlanningForm)
+        app.screen.query_one("#planning-depends", Input).value = first.short_uuid
+        app.screen.on_button_pressed(
+            Button.Pressed(app.screen.query_one("#planning-save", Button))
+        )
+        await pilot.pause()
+
+        assert ("modify_planning", second.short_uuid) not in client.calls
+        assert "dependency cycle" in str(app.query_one("#details").render())
 
 
 async def test_planning_editor_rejects_invalid_dependency_without_modification() -> None:
