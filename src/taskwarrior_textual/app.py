@@ -79,8 +79,8 @@ class TaskForm(ModalScreen[dict[str, str] | None]):
                 id="depends",
             )
             yield Input(
-                value=str(task.estimate_hours) if task and task.estimate_hours else "",
-                placeholder="Estimate (hours)",
+                value=str(task.estimate_hours) if task and task.has_estimate else "",
+                placeholder="Estimate (hours; 0 = milestone)",
                 id="estimate",
             )
             with Horizontal(id="form-buttons"):
@@ -229,6 +229,37 @@ class ProjectFilterForm(ModalScreen[str]):
 
     def action_clear_filter(self) -> None:
         self.dismiss("")
+
+
+class MilestonesScreen(ModalScreen[None]):
+    """Read-only explicit milestone overview."""
+
+    BINDINGS = [("escape", "close", "Close")]
+
+    CSS = """
+    MilestonesScreen { align: center middle; }
+    #milestones-box {
+        width: 80%;
+        max-width: 100;
+        height: auto;
+        max-height: 85%;
+        padding: 1 2;
+        border: round $accent;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, body: str) -> None:
+        super().__init__()
+        self.body = body
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="milestones-box"):
+            yield Label("Milestones")
+            yield Static(self.body, id="milestones-body")
+
+    def action_close(self) -> None:
+        self.dismiss(None)
 
 
 class ConstraintsScreen(ModalScreen[None]):
@@ -512,6 +543,7 @@ class TaskwarriorApp(App[None]):
         ("shift+h", "show_gantt", "Gantt"),
         ("shift+l", "show_calendar_plan", "Calendar"),
         ("shift+k", "show_constraints", "Constraints"),
+        ("shift+m", "show_milestones", "Milestones"),
         ("shift+p", "show_project_overview", "Projects"),
         ("f", "filter_tag", "Tag"),
         ("v", "toggle_active", "Active"),
@@ -888,7 +920,7 @@ class TaskwarriorApp(App[None]):
             )
 
         unestimated = sorted(
-            task.short_uuid for task in tasks if task.estimate_hours == 0
+            task.short_uuid for task in tasks if not task.has_estimate
         )
         if unestimated:
             lines.extend(
@@ -936,7 +968,9 @@ class TaskwarriorApp(App[None]):
         ):
             task = by_uuid[uuid]
             offset = int(round(earliest_start[uuid]))
-            if task.estimate_hours == 0:
+            if task.is_milestone:
+                bar = " " * offset + "◆"
+            elif not task.has_estimate:
                 bar = " " * offset + "·"
             else:
                 width = max(1, int(round(task.estimate_hours)))
@@ -948,7 +982,7 @@ class TaskwarriorApp(App[None]):
             )
 
         unestimated = sorted(
-            task.short_uuid for task in tasks if task.estimate_hours == 0
+            task.short_uuid for task in tasks if not task.has_estimate
         )
         if unestimated:
             lines.extend(
@@ -1020,7 +1054,7 @@ class TaskwarriorApp(App[None]):
             )
 
         unestimated = sorted(
-            task.short_uuid for task in tasks if task.estimate_hours == 0
+            task.short_uuid for task in tasks if not task.has_estimate
         )
         if unestimated:
             lines.extend(
@@ -1037,6 +1071,25 @@ class TaskwarriorApp(App[None]):
         if invalid_due:
             lines.extend(["", "Invalid due dates ignored: " + ", ".join(invalid_due)])
 
+        return "\n".join(lines)
+
+    @staticmethod
+    def _milestones_summary(tasks: list[Task]) -> str:
+        """Summarize explicit zero-duration milestones in the current view."""
+        if not tasks:
+            return "No tasks in current view."
+
+        milestones = sorted(
+            (task for task in tasks if task.is_milestone),
+            key=lambda task: task.short_uuid,
+        )
+        if not milestones:
+            return "No explicit zero-duration milestones in current view."
+
+        lines = [f"Milestones: {len(milestones)}", "", "UUID | When | Description"]
+        for task in milestones:
+            when = task.display_due or task.display_scheduled or "-"
+            lines.append(f"{task.short_uuid} | {when} | {task.description}")
         return "\n".join(lines)
 
     @classmethod
@@ -1118,7 +1171,7 @@ class TaskwarriorApp(App[None]):
             stats["active"] += int(task.active)
             stats["blocked"] += int(bool(task.depends))
             stats["estimate"] += task.estimate_hours
-            stats["unestimated"] += int(task.estimate_hours == 0)
+            stats["unestimated"] += int(not task.has_estimate)
             stats["urgency"] += task.urgency
 
         projects = sorted(
@@ -1267,6 +1320,10 @@ class TaskwarriorApp(App[None]):
     def action_show_constraints(self) -> None:
         """Show scheduled and due constraints for the current view."""
         self.push_screen(ConstraintsScreen(self._constraints_summary(self.view_tasks)))
+
+    def action_show_milestones(self) -> None:
+        """Show explicit zero-duration milestones for the current view."""
+        self.push_screen(MilestonesScreen(self._milestones_summary(self.view_tasks)))
 
     def action_show_project_overview(self) -> None:
         """Show a local project summary for the currently loaded view."""
