@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from textual.widgets import Button, Input
 
@@ -740,6 +742,44 @@ async def test_critical_path_key_opens_local_screen_without_refetch() -> None:
         await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(app.screen, CriticalPathScreen)
+
+
+def test_critical_path_summary_uses_remaining_work_for_active_task() -> None:
+    active = Task(
+        uuid="abababab-1111-2222-3333-444444444444",
+        description="Active",
+        status="pending",
+        start="20260923T090000Z",
+        estimate_hours=4.0,
+    )
+
+    summary = TaskwarriorApp._critical_path_summary(
+        [active],
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 11, 0, tzinfo=UTC),
+    )
+
+    assert "Project duration: 2.00h" in summary
+    assert "abababab | 4.00h | 0.00 | 2.00 | 0.00 | yes | task" in summary
+
+
+def test_gantt_summary_uses_remaining_work_for_active_task() -> None:
+    active = Task(
+        uuid="cdcdcdcd-1111-2222-3333-444444444444",
+        description="Active",
+        status="pending",
+        start="20260923T090000Z",
+        estimate_hours=4.0,
+    )
+
+    summary = TaskwarriorApp._gantt_summary(
+        [active],
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 11, 0, tzinfo=UTC),
+    )
+
+    assert "Scale: 1 char = 1h | Project duration: 2.00h" in summary
+    assert "cdcdcdcd | * | 0.00-2.00h | ██ | Active" in summary
 
 
 def test_gantt_summary_renders_dependency_schedule() -> None:
