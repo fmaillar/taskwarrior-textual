@@ -365,7 +365,7 @@ def build_absolute_schedule(
         elif explicit_start is not None:
             candidates.append(explicit_start)
         candidates.extend(finishes[dependency] for dependency in dependencies)
-        estimate_hours = _remaining_estimate_hours(
+        estimate_hours = remaining_estimate_hours(
             task,
             calendar,
             resolved_now,
