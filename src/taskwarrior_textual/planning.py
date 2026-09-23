@@ -207,6 +207,56 @@ def parse_taskwarrior_datetime(value: str) -> datetime | None:
         return None
 
 
+def _capacity_allows(
+    start: datetime,
+    finish: datetime,
+    reservations: list[tuple[datetime, datetime]],
+    capacity: int,
+) -> bool:
+    """Return whether one more task fits without exceeding capacity."""
+    if finish <= start:
+        return True
+
+    points = {start}
+    for reserved_start, reserved_finish in reservations:
+        if reserved_start < finish and reserved_finish > start:
+            points.add(max(start, reserved_start))
+
+    return all(
+        sum(
+            reserved_start <= point < reserved_finish
+            for reserved_start, reserved_finish in reservations
+        )
+        < capacity
+        for point in points
+    )
+
+
+def _capacity_constrained_start(
+    calendar: WorkingCalendar,
+    earliest: datetime,
+    hours: float,
+    capacity: int | None,
+    reservations: list[tuple[datetime, datetime]],
+) -> datetime:
+    """Return the earliest working start that fits available capacity."""
+    start = calendar.next_working_time(earliest)
+    if capacity is None or hours == 0:
+        return start
+
+    while True:
+        finish = calendar.add_working_hours(start, hours)
+        if _capacity_allows(start, finish, reservations, capacity):
+            return start
+
+        blocker_finishes = [
+            reserved_finish
+            for reserved_start, reserved_finish in reservations
+            if reserved_start < finish and reserved_finish > start
+        ]
+        start = calendar.next_working_time(min(blocker_finishes))
+
+
 def build_absolute_schedule(
     graph: PlanningGraph,
     settings: PlanningSettings | None = None,
@@ -215,7 +265,8 @@ def build_absolute_schedule(
     if graph.cyclic:
         return None
 
-    calendar = WorkingCalendar(settings or PlanningSettings())
+    resolved_settings = settings or PlanningSettings()
+    calendar = WorkingCalendar(resolved_settings)
     scheduled = {
         uuid: parse_taskwarrior_datetime(task.scheduled)
         for uuid, task in graph.by_uuid.items()
@@ -252,6 +303,7 @@ def build_absolute_schedule(
     late_by: dict[str, float] = {}
     due_slack: dict[str, float] = {}
     invalid_due: list[str] = []
+    reservations: list[tuple[datetime, datetime]] = []
 
     for uuid in graph.order:
         if uuid in invalid_scheduled_uuids:
@@ -266,13 +318,19 @@ def build_absolute_schedule(
         if explicit_start is not None:
             candidates.append(explicit_start)
         candidates.extend(finishes[dependency] for dependency in dependencies)
-        start = calendar.next_working_time(max(candidates))
-        finish = calendar.add_working_hours(
-            start,
-            graph.by_uuid[uuid].estimate_hours,
+        estimate_hours = graph.by_uuid[uuid].estimate_hours
+        start = _capacity_constrained_start(
+            calendar,
+            max(candidates),
+            estimate_hours,
+            resolved_settings.capacity,
+            reservations,
         )
+        finish = calendar.add_working_hours(start, estimate_hours)
         starts[uuid] = start
         finishes[uuid] = finish
+        if finish > start:
+            reservations.append((start, finish))
 
         raw_due = graph.by_uuid[uuid].due
         due = parse_taskwarrior_datetime(raw_due)
