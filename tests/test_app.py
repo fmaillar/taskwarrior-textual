@@ -97,6 +97,54 @@ async def test_app_mounts_and_displays_pending_task() -> None:
         assert ("view", "pending") in app.client.calls
 
 
+def test_task_row_shows_active_marker_tags_and_due_in_pending_view() -> None:
+    row = TaskwarriorApp._task_row(TASK, "pending")
+
+    assert row == (
+        TASK.short_uuid,
+        "▶",
+        "L",
+        "",
+        "2026-09-26",
+        "mail,rms",
+        "Vérifier mail de RMS",
+        "9.38",
+    )
+
+
+def test_task_row_uses_view_specific_date() -> None:
+    task = Task(
+        uuid="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        description="Historical task",
+        status="completed",
+        wait="20260924T080000Z",
+        end="20260925T170000Z",
+        tags=("history",),
+    )
+
+    assert TaskwarriorApp._task_row(task, "waiting")[4] == "2026-09-24 08:00"
+    assert TaskwarriorApp._task_row(task, "completed")[4] == "2026-09-25 17:00"
+    assert TaskwarriorApp._task_row(task, "deleted")[4] == "2026-09-25 17:00"
+
+
+def test_task_row_has_no_active_marker_for_inactive_task() -> None:
+    task = Task(
+        uuid="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        description="Inactive",
+        status="pending",
+    )
+
+    assert TaskwarriorApp._task_row(task, "pending")[1] == ""
+
+
+async def test_table_uses_enriched_row_shape() -> None:
+    app = TaskwarriorApp(client=FakeUiClient())
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        table = app.query_one("#tasks")
+        assert list(table.get_row_at(0)) == list(TaskwarriorApp._task_row(TASK, "pending"))
+
+
 async def test_selected_task_is_none_with_empty_table() -> None:
     app = TaskwarriorApp(client=FakeUiClient(tasks=[]))
     async with app.run_test() as pilot:
