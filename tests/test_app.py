@@ -2362,7 +2362,7 @@ def test_project_dashboard_reports_cycles_unresolved_and_unestimated_work() -> N
     assert "Unresolved dependencies: 41414141 -> 99999999" in summary
 
 
-def test_project_dashboard_handles_defaults_active_state_and_missing_anchor() -> None:
+def test_project_dashboard_uses_active_task_as_calendar_anchor() -> None:
     task = Task(
         uuid="abababab-1111-1111-1111-111111111111",
         description="Active unprojected",
@@ -2376,12 +2376,39 @@ def test_project_dashboard_handles_defaults_active_state_and_missing_anchor() ->
         "",
         [task],
         [task],
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 10, 0, tzinfo=UTC),
+        tracked_hours={},
     )
 
     assert "Project: (none)" in summary
     assert "Active: 1" in summary
+    assert "Planned finish: 2026-09-23 10:00 UTC | Late project tasks: 0" in summary
+    assert "abababab | project | active | 2.00h | 0.00h | 0.00h" in summary
+
+
+def test_project_dashboard_reports_missing_calendar_anchor_for_inactive_work() -> None:
+    task = Task(
+        uuid="acacacac-1111-1111-1111-111111111111",
+        description="Inactive unprojected",
+        status="pending",
+        project="",
+        estimate_hours=2.0,
+    )
+
+    summary = TaskwarriorApp._project_dashboard(
+        "",
+        [task],
+        [task],
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 10, 0, tzinfo=UTC),
+        tracked_hours={},
+    )
+
+    assert "Project: (none)" in summary
+    assert "Active: 0" in summary
     assert "Planned finish: unavailable (no calendar anchor)" in summary
-    assert "abababab | project | active | 2.00h | 0.00h" in summary
+    assert "acacacac | project | pending | 2.00h | 0.00h | 2.00h" in summary
 
 
 def test_project_dashboard_handles_empty_project_scope() -> None:
