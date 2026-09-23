@@ -11,13 +11,14 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
 
-from .config import PlanningSettings
+from .config import PlanningSettings, WorkingCalendar
 from .models import Task
 from .planning import (
     build_absolute_schedule,
     build_planning_graph,
     build_relative_schedule,
     parse_taskwarrior_datetime,
+    remaining_estimate_hours,
 )
 from .taskwarrior import TaskwarriorClient, TaskwarriorError
 
@@ -579,6 +580,8 @@ class TaskwarriorApp(App[None]):
         self.blocked_only = False
         self.active_only = False
         self.sort_key: str | None = None
+        self.tracked_hours: dict[str, float] = {}
+        self.tracking_now = datetime.now(UTC)
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -599,12 +602,21 @@ class TaskwarriorApp(App[None]):
             "Tags",
             "Description",
             "Estimate",
+            "Tracked",
+            "Remaining",
             "Urgency",
         )
         self.action_refresh_tasks()
 
     @staticmethod
-    def _task_row(task: Task, view: str) -> tuple[str, ...]:
+    def _task_row(
+        task: Task,
+        view: str,
+        settings: PlanningSettings | None = None,
+        *,
+        now: datetime | None = None,
+        tracked_hours: dict[str, float] | None = None,
+    ) -> tuple[str, ...]:
         """Render one task as a table row for the selected view."""
         if view == "waiting":
             when = task.display_wait
@@ -614,6 +626,20 @@ class TaskwarriorApp(App[None]):
             when = task.display_end
         else:
             when = task.display_due
+
+        resolved_settings = settings or PlanningSettings()
+        resolved_now = now or datetime.now(UTC)
+        tracked = (
+            tracked_hours[task.uuid]
+            if tracked_hours is not None and task.uuid in tracked_hours
+            else None
+        )
+        remaining = remaining_estimate_hours(
+            task,
+            WorkingCalendar(resolved_settings),
+            resolved_now,
+            tracked_hours,
+        )
 
         return (
             task.short_uuid,
@@ -625,6 +651,8 @@ class TaskwarriorApp(App[None]):
             ",".join(task.tags),
             task.description,
             task.display_estimate,
+            "" if tracked is None else f"{tracked:.2f}h",
+            f"{remaining:.2f}h" if task.has_estimate else "",
             f"{task.urgency:.2f}",
         )
 
@@ -724,7 +752,13 @@ class TaskwarriorApp(App[None]):
         for task in visible:
             self.tasks[task.short_uuid] = task
             table.add_row(
-                *self._task_row(task, self.current_view),
+                *self._task_row(
+                    task,
+                    self.current_view,
+                    self.planning_settings,
+                    now=self.tracking_now,
+                    tracked_hours=self.tracked_hours,
+                ),
                 key=task.short_uuid,
             )
 
@@ -1247,12 +1281,22 @@ class TaskwarriorApp(App[None]):
         return "\n".join(lines)
 
     @staticmethod
-    def _project_overview(tasks: list[Task]) -> str:
-        """Summarize task counts and urgency by project for the current view."""
+    def _project_overview(
+        tasks: list[Task],
+        settings: PlanningSettings | None = None,
+        *,
+        now: datetime | None = None,
+        tracked_hours: dict[str, float] | None = None,
+    ) -> str:
+        """Summarize estimate, tracked and remaining work by project."""
         if not tasks:
             return "No tasks in current view."
 
         summary: dict[str, dict[str, float | int]] = {}
+        resolved_settings = settings or PlanningSettings()
+        resolved_now = now or datetime.now(UTC)
+        calendar = WorkingCalendar(resolved_settings)
+
         for task in tasks:
             project = task.project or "(none)"
             stats = summary.setdefault(
@@ -1262,6 +1306,8 @@ class TaskwarriorApp(App[None]):
                     "active": 0,
                     "blocked": 0,
                     "estimate": 0.0,
+                    "tracked": 0.0,
+                    "remaining": 0.0,
                     "unestimated": 0,
                     "urgency": 0.0,
                 },
@@ -1270,6 +1316,17 @@ class TaskwarriorApp(App[None]):
             stats["active"] += int(task.active)
             stats["blocked"] += int(bool(task.depends))
             stats["estimate"] += task.estimate_hours
+            stats["tracked"] += (
+                tracked_hours.get(task.uuid, 0.0)
+                if tracked_hours is not None
+                else 0.0
+            )
+            stats["remaining"] += remaining_estimate_hours(
+                task,
+                calendar,
+                resolved_now,
+                tracked_hours,
+            )
             stats["unestimated"] += int(not task.has_estimate)
             stats["urgency"] += task.urgency
 
@@ -1278,13 +1335,14 @@ class TaskwarriorApp(App[None]):
             key=lambda project: (project == "(none)", project.casefold()),
         )
         lines = [
-            "Project | Tasks | Active | Blocked | Estimate | Unestimated | Urgency"
+            "Project | Tasks | Active | Blocked | Estimate | Tracked | Remaining | Unestimated | Urgency"
         ]
         for project in projects:
             stats = summary[project]
             lines.append(
                 f"{project} | {stats['tasks']} | {stats['active']} | "
                 f"{stats['blocked']} | {stats['estimate']:.2f}h | "
+                f"{stats['tracked']:.2f}h | {stats['remaining']:.2f}h | "
                 f"{stats['unestimated']} | {stats['urgency']:.2f}"
             )
         return "\n".join(lines)
@@ -1337,13 +1395,27 @@ class TaskwarriorApp(App[None]):
         self.action_refresh_tasks()
 
     def action_refresh_tasks(self) -> None:
-        """Reload the current view, then reapply local search and sorting."""
+        """Reload the current view, tracking effort, then reapply local state."""
         try:
             self.view_tasks = self.client.view(self.current_view)
         except TaskwarriorError as exc:
             self._show_error(exc)
             return
+
+        self.tracking_now = datetime.now(UTC)
+        tracking_error: TaskwarriorError | None = None
+        try:
+            self.tracked_hours = self.client.timewarrior_hours(
+                self.view_tasks,
+                now=self.tracking_now,
+            )
+        except TaskwarriorError as exc:
+            self.tracked_hours = {}
+            tracking_error = exc
+
         self._render_tasks()
+        if tracking_error is not None:
+            self._show_error(tracking_error)
 
     def _switch_view(self, name: str) -> None:
         """Select a named view and reload its tasks."""
@@ -1518,8 +1590,21 @@ class TaskwarriorApp(App[None]):
         self.push_screen(MilestonesScreen(self._milestones_summary(self.view_tasks)))
 
     def action_show_project_overview(self) -> None:
-        """Show a local project summary for the currently loaded view."""
-        self.push_screen(ProjectOverviewScreen(self._project_overview(self.view_tasks)))
+        """Show project totals including tracked and remaining work."""
+        context = self._tracked_planning_context(self.view_tasks)
+        if context is None:
+            return
+        tracked_hours, now = context
+        self.push_screen(
+            ProjectOverviewScreen(
+                self._project_overview(
+                    self.view_tasks,
+                    self.planning_settings,
+                    now=now,
+                    tracked_hours=tracked_hours,
+                )
+            )
+        )
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Inspect the row activated with Enter in the task table."""
