@@ -138,7 +138,7 @@ async def test_add_form_save_calls_client() -> None:
     assert ("add", "New task") in client.calls
 
 
-async def test_add_form_cancel_does_not_call_client() -> None:
+async def test_add_form_cancel_does_not_create_task() -> None:
     client = FakeUiClient()
     app = TaskwarriorApp(client=client)
     async with app.run_test() as pilot:
@@ -148,7 +148,9 @@ async def test_add_form_cancel_does_not_call_client() -> None:
         form = app.screen
         form.on_button_pressed(Button.Pressed(form.query_one("#cancel", Button)))
         await pilot.pause()
-    assert not client.calls
+
+    assert ("view", "pending") in client.calls
+    assert not any(action == "add" for action, _ in client.calls)
 
 
 async def test_add_error_is_rendered() -> None:
