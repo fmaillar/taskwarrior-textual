@@ -79,9 +79,10 @@ SEARCH_TASKS = [
 
 class FakeUiClient:
     def __init__(self, tasks: list[Task] | None = None) -> None:
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, object]] = []
         self.fail: str | None = None
         self.tasks = [TASK] if tasks is None else tasks
+        self.expanded_tasks: list[Task] | None = None
         self.add_values: list[dict[str, str]] = []
         self.modify_values: list[dict[str, object]] = []
 
@@ -93,6 +94,11 @@ class FakeUiClient:
         self._maybe_fail("view")
         self.calls.append(("view", name))
         return self.tasks
+
+    def expand_dependencies(self, tasks: list[Task], depth: int) -> list[Task]:
+        self._maybe_fail("expand_dependencies")
+        self.calls.append(("expand_dependencies", depth))
+        return list(tasks) if self.expanded_tasks is None else self.expanded_tasks
 
     def information(self, uuid_prefix: str) -> str:
         self._maybe_fail("information")
@@ -463,6 +469,49 @@ async def test_dependency_overview_key_opens_local_screen_without_refetch() -> N
         await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(app.screen, DependencyOverviewScreen)
+
+
+async def test_dependency_overview_expands_external_dependencies_to_configured_depth() -> None:
+    root = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Root",
+        status="pending",
+        depends=("22222222-2222-2222-2222-222222222222",),
+    )
+    external = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="External dependency",
+        status="completed",
+    )
+    client = FakeUiClient(tasks=[root])
+    client.expanded_tasks = [root, external]
+    app = TaskwarriorApp(
+        client=client,
+        planning_settings=PlanningSettings(timezone="UTC", dependency_depth=3),
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+g")
+        await pilot.pause()
+
+        body = str(app.screen.query_one("#dependency-overview-body").render())
+        assert "Tasks: 2 | Resolved edges: 1 | Unresolved: 0" in body
+        assert ("expand_dependencies", 3) in client.calls
+
+
+async def test_dependency_expansion_error_is_rendered_without_opening_planning_screen() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    client.fail = "expand_dependencies"
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+g")
+        await pilot.pause()
+
+        assert not isinstance(app.screen, DependencyOverviewScreen)
+        assert "expand_dependencies failed" in str(app.query_one("#details").render())
 
 
 def test_critical_path_summary_computes_schedule_and_slack() -> None:
