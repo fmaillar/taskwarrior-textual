@@ -322,6 +322,183 @@ def test_build_absolute_schedule_applies_dependencies_scheduled_and_due() -> Non
     assert schedule.invalid_scheduled == ()
 
 
+def test_build_absolute_schedule_capacity_one_serializes_parallel_tasks_deterministically() -> None:
+    anchor = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Anchor",
+        status="pending",
+        scheduled="20260924T080000Z",
+        estimate_hours=1.0,
+    )
+    first = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="First branch",
+        status="pending",
+        depends=(anchor.uuid,),
+        estimate_hours=2.0,
+    )
+    second = Task(
+        uuid="33333333-3333-3333-3333-333333333333",
+        description="Second branch",
+        status="pending",
+        depends=(anchor.uuid,),
+        estimate_hours=2.0,
+    )
+    settings = PlanningSettings(timezone="UTC", capacity=1)
+
+    schedule = build_absolute_schedule(
+        build_planning_graph([second, first, anchor]),
+        settings,
+    )
+
+    assert schedule is not None
+    assert schedule.starts[first.uuid] == datetime(2026, 9, 24, 9, 0, tzinfo=UTC)
+    assert schedule.finishes[first.uuid] == datetime(2026, 9, 24, 11, 0, tzinfo=UTC)
+    assert schedule.starts[second.uuid] == datetime(2026, 9, 24, 11, 0, tzinfo=UTC)
+    assert schedule.finishes[second.uuid] == datetime(2026, 9, 24, 14, 0, tzinfo=UTC)
+
+
+def test_build_absolute_schedule_capacity_two_allows_two_parallel_tasks_then_waits() -> None:
+    anchor = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Anchor",
+        status="pending",
+        scheduled="20260924T080000Z",
+        estimate_hours=1.0,
+    )
+    first = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="First",
+        status="pending",
+        depends=(anchor.uuid,),
+        estimate_hours=2.0,
+    )
+    second = Task(
+        uuid="33333333-3333-3333-3333-333333333333",
+        description="Second",
+        status="pending",
+        depends=(anchor.uuid,),
+        estimate_hours=2.0,
+    )
+    third = Task(
+        uuid="44444444-4444-4444-4444-444444444444",
+        description="Third",
+        status="pending",
+        depends=(anchor.uuid,),
+        estimate_hours=1.0,
+    )
+    settings = PlanningSettings(timezone="UTC", capacity=2)
+
+    schedule = build_absolute_schedule(
+        build_planning_graph([third, second, first, anchor]),
+        settings,
+    )
+
+    assert schedule is not None
+    assert schedule.starts[first.uuid] == datetime(2026, 9, 24, 9, 0, tzinfo=UTC)
+    assert schedule.starts[second.uuid] == datetime(2026, 9, 24, 9, 0, tzinfo=UTC)
+    assert schedule.finishes[first.uuid] == datetime(2026, 9, 24, 11, 0, tzinfo=UTC)
+    assert schedule.finishes[second.uuid] == datetime(2026, 9, 24, 11, 0, tzinfo=UTC)
+    assert schedule.starts[third.uuid] == datetime(2026, 9, 24, 11, 0, tzinfo=UTC)
+    assert schedule.finishes[third.uuid] == datetime(2026, 9, 24, 12, 0, tzinfo=UTC)
+
+
+def test_build_absolute_schedule_unlimited_capacity_preserves_parallelism() -> None:
+    anchor = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Anchor",
+        status="pending",
+        scheduled="20260924T080000Z",
+        estimate_hours=1.0,
+    )
+    first = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="First",
+        status="pending",
+        depends=(anchor.uuid,),
+        estimate_hours=2.0,
+    )
+    second = Task(
+        uuid="33333333-3333-3333-3333-333333333333",
+        description="Second",
+        status="pending",
+        depends=(anchor.uuid,),
+        estimate_hours=2.0,
+    )
+
+    schedule = build_absolute_schedule(
+        build_planning_graph([second, first, anchor]),
+        PlanningSettings(timezone="UTC", capacity=None),
+    )
+
+    assert schedule is not None
+    assert schedule.starts[first.uuid] == datetime(2026, 9, 24, 9, 0, tzinfo=UTC)
+    assert schedule.starts[second.uuid] == datetime(2026, 9, 24, 9, 0, tzinfo=UTC)
+
+
+def test_build_absolute_schedule_zero_duration_task_does_not_consume_capacity() -> None:
+    anchor = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Anchor",
+        status="pending",
+        scheduled="20260924T080000Z",
+        estimate_hours=1.0,
+    )
+    milestone = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="Gate",
+        status="pending",
+        depends=(anchor.uuid,),
+        estimate_hours=0.0,
+        estimate_defined=True,
+    )
+    work = Task(
+        uuid="33333333-3333-3333-3333-333333333333",
+        description="Work",
+        status="pending",
+        depends=(anchor.uuid,),
+        estimate_hours=1.0,
+    )
+
+    schedule = build_absolute_schedule(
+        build_planning_graph([work, milestone, anchor]),
+        PlanningSettings(timezone="UTC", capacity=1),
+    )
+
+    assert schedule is not None
+    assert schedule.starts[milestone.uuid] == datetime(2026, 9, 24, 9, 0, tzinfo=UTC)
+    assert schedule.finishes[milestone.uuid] == datetime(2026, 9, 24, 9, 0, tzinfo=UTC)
+    assert schedule.starts[work.uuid] == datetime(2026, 9, 24, 9, 0, tzinfo=UTC)
+    assert schedule.finishes[work.uuid] == datetime(2026, 9, 24, 10, 0, tzinfo=UTC)
+
+
+def test_build_absolute_schedule_capacity_reservation_spans_calendar_breaks() -> None:
+    first = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Long task",
+        status="pending",
+        scheduled="20260925T150000Z",
+        estimate_hours=4.0,
+    )
+    second = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="Waiting task",
+        status="pending",
+        scheduled="20260925T150000Z",
+        estimate_hours=2.0,
+    )
+
+    schedule = build_absolute_schedule(
+        build_planning_graph([second, first]),
+        PlanningSettings(timezone="UTC", capacity=1),
+    )
+
+    assert schedule is not None
+    assert schedule.finishes[first.uuid] == datetime(2026, 9, 28, 11, 0, tzinfo=UTC)
+    assert schedule.starts[second.uuid] == datetime(2026, 9, 28, 11, 0, tzinfo=UTC)
+    assert schedule.finishes[second.uuid] == datetime(2026, 9, 28, 14, 0, tzinfo=UTC)
+
+
 def test_build_absolute_schedule_uses_configured_working_periods() -> None:
     task = Task(
         uuid="abababab-1111-2222-3333-444444444444",
