@@ -1493,9 +1493,15 @@ def test_timewarrior_trend_clips_to_requested_window_and_handles_no_activity() -
         end=datetime(2026, 9, 15, 10, 0, tzinfo=UTC),
     )
 
+    unknown = TimewarriorInterval(
+        task_uuid="99999999-1111-1111-1111-111111111111",
+        start=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+        end=datetime(2026, 9, 23, 9, 0, tzinfo=UTC),
+    )
+
     summary = TaskwarriorApp._timewarrior_trend(
         [task],
-        (old,),
+        (old, unknown),
         PlanningSettings(timezone="UTC"),
         now=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
         days=7,
@@ -1542,6 +1548,10 @@ async def test_timewarrior_trend_key_opens_screen_without_task_refetch() -> None
         assert "Tracked in window: 1.00h" in body
         assert ("timewarrior_intervals", 1) in client.calls
         assert client.calls.count(("view", "pending")) == initial_view_calls
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, TimewarriorTrendScreen)
 
 
 async def test_timewarrior_trend_does_not_open_when_timewarrior_fails() -> None:
