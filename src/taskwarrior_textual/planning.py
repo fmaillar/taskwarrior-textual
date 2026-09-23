@@ -152,10 +152,13 @@ def _remaining_estimate_hours(
     task: Task,
     calendar: WorkingCalendar,
     now: datetime,
+    tracked_hours: dict[str, float] | None = None,
 ) -> float:
     """Return future work remaining for one task."""
     if task.status in {"completed", "deleted"}:
         return 0.0
+    if tracked_hours is not None and task.uuid in tracked_hours:
+        return max(0.0, task.estimate_hours - tracked_hours[task.uuid])
     if not task.active:
         return task.estimate_hours
 
@@ -172,6 +175,7 @@ def build_relative_schedule(
     settings: PlanningSettings | None = None,
     *,
     now: datetime | None = None,
+    tracked_hours: dict[str, float] | None = None,
 ) -> RelativeSchedule | None:
     """Compute earliest/latest timing and slack from remaining future work."""
     if graph.cyclic:
@@ -181,7 +185,12 @@ def build_relative_schedule(
     calendar = WorkingCalendar(resolved_settings)
     resolved_now = now or datetime.now(UTC)
     remaining_hours = {
-        uuid: _remaining_estimate_hours(task, calendar, resolved_now)
+        uuid: _remaining_estimate_hours(
+            task,
+            calendar,
+            resolved_now,
+            tracked_hours,
+        )
         for uuid, task in graph.by_uuid.items()
     }
 
@@ -291,6 +300,7 @@ def build_absolute_schedule(
     settings: PlanningSettings | None = None,
     *,
     now: datetime | None = None,
+    tracked_hours: dict[str, float] | None = None,
 ) -> AbsoluteSchedule | None:
     """Build an absolute UTC schedule using the configured working calendar."""
     if graph.cyclic:
@@ -355,7 +365,12 @@ def build_absolute_schedule(
         elif explicit_start is not None:
             candidates.append(explicit_start)
         candidates.extend(finishes[dependency] for dependency in dependencies)
-        estimate_hours = _remaining_estimate_hours(task, calendar, resolved_now)
+        estimate_hours = _remaining_estimate_hours(
+            task,
+            calendar,
+            resolved_now,
+            tracked_hours,
+        )
         start = _capacity_constrained_start(
             calendar,
             max(candidates),
