@@ -486,6 +486,7 @@ class TaskwarriorApp(App[None]):
             "When",
             "Tags",
             "Description",
+            "Estimate",
             "Urgency",
         )
         self.action_refresh_tasks()
@@ -511,6 +512,7 @@ class TaskwarriorApp(App[None]):
             when,
             ",".join(task.tags),
             task.description,
+            task.display_estimate,
             f"{task.urgency:.2f}",
         )
 
@@ -884,6 +886,7 @@ class TaskwarriorApp(App[None]):
 
         by_uuid = {task.uuid: task for task in tasks}
         dependencies: dict[str, set[str]] = {}
+        successors: dict[str, set[str]] = {task.uuid: set() for task in tasks}
         unresolved: list[tuple[str, str]] = []
 
         for task in tasks:
@@ -891,6 +894,7 @@ class TaskwarriorApp(App[None]):
             for dependency in task.depends:
                 if dependency in by_uuid:
                     resolved.add(dependency)
+                    successors[dependency].add(task.uuid)
                 else:
                     unresolved.append((task.short_uuid, dependency[:8]))
             dependencies[task.uuid] = resolved
@@ -922,7 +926,23 @@ class TaskwarriorApp(App[None]):
             earliest_finish[uuid] = start + by_uuid[uuid].estimate_hours
 
         project_duration = max(earliest_finish.values(), default=0.0)
-        lines = [f"Scale: 1 char = 1h | Project duration: {project_duration:.2f}h"]
+        latest_start: dict[str, float] = {}
+        for uuid in reversed(order):
+            if successors[uuid]:
+                finish = min(latest_start[successor] for successor in successors[uuid])
+            else:
+                finish = project_duration
+            latest_start[uuid] = finish - by_uuid[uuid].estimate_hours
+
+        critical = {
+            uuid
+            for uuid in order
+            if abs(latest_start[uuid] - earliest_start[uuid]) < 1e-9
+        }
+        lines = [
+            f"Scale: 1 char = 1h | Project duration: {project_duration:.2f}h",
+            "Critical marker: *",
+        ]
 
         for uuid in sorted(
             order,
@@ -935,8 +955,9 @@ class TaskwarriorApp(App[None]):
             else:
                 width = max(1, int(round(task.estimate_hours)))
                 bar = " " * offset + "█" * width
+            marker = "*" if uuid in critical else " "
             lines.append(
-                f"{task.short_uuid} | {earliest_start[uuid]:.2f}-"
+                f"{task.short_uuid} | {marker} | {earliest_start[uuid]:.2f}-"
                 f"{earliest_finish[uuid]:.2f}h | {bar} | {task.description}"
             )
 
@@ -968,23 +989,35 @@ class TaskwarriorApp(App[None]):
             project = task.project or "(none)"
             stats = summary.setdefault(
                 project,
-                {"tasks": 0, "active": 0, "blocked": 0, "urgency": 0.0},
+                {
+                    "tasks": 0,
+                    "active": 0,
+                    "blocked": 0,
+                    "estimate": 0.0,
+                    "unestimated": 0,
+                    "urgency": 0.0,
+                },
             )
             stats["tasks"] += 1
             stats["active"] += int(task.active)
             stats["blocked"] += int(bool(task.depends))
+            stats["estimate"] += task.estimate_hours
+            stats["unestimated"] += int(task.estimate_hours == 0)
             stats["urgency"] += task.urgency
 
         projects = sorted(
             summary,
             key=lambda project: (project == "(none)", project.casefold()),
         )
-        lines = ["Project | Tasks | Active | Blocked | Urgency"]
+        lines = [
+            "Project | Tasks | Active | Blocked | Estimate | Unestimated | Urgency"
+        ]
         for project in projects:
             stats = summary[project]
             lines.append(
                 f"{project} | {stats['tasks']} | {stats['active']} | "
-                f"{stats['blocked']} | {stats['urgency']:.2f}"
+                f"{stats['blocked']} | {stats['estimate']:.2f}h | "
+                f"{stats['unestimated']} | {stats['urgency']:.2f}"
             )
         return "\n".join(lines)
 
