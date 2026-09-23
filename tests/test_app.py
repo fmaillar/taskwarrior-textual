@@ -19,6 +19,7 @@ from taskwarrior_textual.app import (
     ProjectDashboardScreen,
     ProjectFilterForm,
     ProjectOverviewScreen,
+    ScheduleProposalScreen,
     SearchForm,
     TagFilterForm,
     TaskForm,
@@ -94,6 +95,7 @@ class FakeUiClient:
         self.add_values: list[dict[str, str]] = []
         self.modify_values: list[dict[str, object]] = []
         self.planning_values: list[dict[str, str]] = []
+        self.scheduled_values: list[tuple[str, str]] = []
 
     def _maybe_fail(self, action: str) -> None:
         if self.fail == action:
@@ -151,6 +153,12 @@ class FakeUiClient:
         self.calls.append(("modify_planning", uuid_prefix))
         self.planning_values.append(values)
         return "planned"
+
+    def modify_scheduled(self, uuid_prefix: str, scheduled: str) -> str:
+        self._maybe_fail("modify_scheduled")
+        self.calls.append(("modify_scheduled", uuid_prefix))
+        self.scheduled_values.append((uuid_prefix, scheduled))
+        return "scheduled"
 
     def start(self, uuid_prefix: str) -> str:
         self._maybe_fail("start")
@@ -2258,6 +2266,211 @@ async def test_timewarrior_report_does_not_open_when_timewarrior_fails() -> None
 
         assert not isinstance(app.screen, TimewarriorReportScreen)
         assert "timewarrior_hours failed" in str(app.query_one("#details").render())
+
+
+def test_schedule_proposal_plans_unscheduled_project_tasks_from_now() -> None:
+    external = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="External",
+        status="pending",
+        project="Shared",
+        estimate_hours=1.0,
+    )
+    first = Task(
+        uuid="22222222-1111-1111-1111-111111111111",
+        description="First",
+        status="pending",
+        project="Infra",
+        depends=(external.uuid,),
+        estimate_hours=2.0,
+    )
+    second = Task(
+        uuid="33333333-1111-1111-1111-111111111111",
+        description="Second",
+        status="pending",
+        project="Infra",
+        depends=(first.uuid,),
+        estimate_hours=1.0,
+    )
+    now = datetime(2026, 9, 23, 8, 0, tzinfo=UTC)
+
+    body, changes = TaskwarriorApp._schedule_proposal(
+        "Infra",
+        [first, second],
+        [external, first, second],
+        PlanningSettings(timezone="UTC"),
+        now=now,
+        tracked_hours={},
+    )
+
+    assert "Auto-schedule proposal: Infra" in body
+    assert "Planning origin: 2026-09-23 08:00 UTC" in body
+    assert "Project tasks to schedule: 2" in body
+    assert "22222222 | — | 2026-09-23 09:00 UTC | First" in body
+    assert "33333333 | — | 2026-09-23 11:00 UTC | Second" in body
+    assert changes == {
+        first.uuid: "20260923T090000Z",
+        second.uuid: "20260923T110000Z",
+    }
+
+
+def test_schedule_proposal_preserves_existing_scheduled_active_and_external_tasks() -> None:
+    external = Task(
+        uuid="41414141-1111-1111-1111-111111111111",
+        description="External",
+        status="pending",
+        project="Shared",
+        estimate_hours=1.0,
+    )
+    fixed = Task(
+        uuid="42424242-1111-1111-1111-111111111111",
+        description="Fixed",
+        status="pending",
+        project="Infra",
+        scheduled="20260924T090000Z",
+        estimate_hours=1.0,
+    )
+    active = Task(
+        uuid="43434343-1111-1111-1111-111111111111",
+        description="Active",
+        status="pending",
+        project="Infra",
+        start="20260923T080000Z",
+        estimate_hours=2.0,
+    )
+
+    body, changes = TaskwarriorApp._schedule_proposal(
+        "Infra",
+        [fixed, active],
+        [external, fixed, active],
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 10, 0, tzinfo=UTC),
+        tracked_hours={},
+    )
+
+    assert changes == {}
+    assert "No unscheduled inactive project tasks require changes." in body
+
+
+def test_schedule_proposal_refuses_cycles() -> None:
+    first = Task(
+        uuid="51515151-1111-1111-1111-111111111111",
+        description="First",
+        status="pending",
+        project="Infra",
+        depends=("52525252-1111-1111-1111-111111111111",),
+        estimate_hours=1.0,
+    )
+    second = Task(
+        uuid="52525252-1111-1111-1111-111111111111",
+        description="Second",
+        status="pending",
+        project="Infra",
+        depends=(first.uuid,),
+        estimate_hours=1.0,
+    )
+
+    body, changes = TaskwarriorApp._schedule_proposal(
+        "Infra",
+        [first, second],
+        [first, second],
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+        tracked_hours={},
+    )
+
+    assert changes == {}
+    assert body == "Auto-schedule unavailable: dependency cycle detected."
+
+
+async def test_schedule_proposal_apply_updates_project_tasks_and_refreshes() -> None:
+    first = Task(
+        uuid="61616161-1111-1111-1111-111111111111",
+        description="First",
+        status="pending",
+        project="Infra",
+        estimate_hours=1.0,
+    )
+    second = Task(
+        uuid="62626262-1111-1111-1111-111111111111",
+        description="Second",
+        status="pending",
+        project="Infra",
+        depends=(first.uuid,),
+        estimate_hours=1.0,
+    )
+    client = FakeUiClient(tasks=[first, second])
+    client.expanded_tasks = [first, second]
+    app = TaskwarriorApp(
+        client=client,
+        planning_settings=PlanningSettings(timezone="UTC"),
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+s")
+        await pilot.pause()
+
+        assert isinstance(app.screen, ScheduleProposalScreen)
+        app.screen.on_button_pressed(
+            Button.Pressed(app.screen.query_one("#schedule-apply", Button))
+        )
+        await pilot.pause()
+
+        assert len(client.scheduled_values) == 2
+        assert {uuid for uuid, _ in client.scheduled_values} == {
+            first.short_uuid,
+            second.short_uuid,
+        }
+        assert client.calls.count(("view", "pending")) >= 2
+
+
+async def test_schedule_proposal_cancel_makes_no_changes() -> None:
+    task = Task(
+        uuid="71717171-1111-1111-1111-111111111111",
+        description="Task",
+        status="pending",
+        project="Infra",
+        estimate_hours=1.0,
+    )
+    client = FakeUiClient(tasks=[task])
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+s")
+        await pilot.pause()
+
+        assert isinstance(app.screen, ScheduleProposalScreen)
+        app.screen.on_button_pressed(
+            Button.Pressed(app.screen.query_one("#schedule-cancel", Button))
+        )
+        await pilot.pause()
+
+        assert client.scheduled_values == []
+
+
+async def test_schedule_proposal_handles_dependency_or_timewarrior_failure() -> None:
+    dependency_client = FakeUiClient(tasks=SEARCH_TASKS)
+    dependency_client.fail = "expand_dependencies"
+    dependency_app = TaskwarriorApp(client=dependency_client)
+
+    async with dependency_app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+s")
+        await pilot.pause()
+        assert not isinstance(dependency_app.screen, ScheduleProposalScreen)
+
+    time_client = FakeUiClient(tasks=SEARCH_TASKS)
+    time_client.fail = "timewarrior_hours"
+    time_app = TaskwarriorApp(client=time_client)
+
+    async with time_app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+s")
+        await pilot.pause()
+        assert not isinstance(time_app.screen, ScheduleProposalScreen)
+        assert "timewarrior_hours failed" in str(time_app.query_one("#details").render())
 
 
 def test_project_dashboard_consolidates_project_effort_graph_and_calendar() -> None:
