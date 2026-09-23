@@ -149,8 +149,38 @@ class TaskwarriorApp(App[None]):
 
     def on_mount(self) -> None:
         table = self.query_one("#tasks", DataTable)
-        table.add_columns("UUID", "P", "Project", "Due", "Description", "Urgency")
+        table.add_columns(
+            "UUID",
+            "A",
+            "P",
+            "Project",
+            "When",
+            "Tags",
+            "Description",
+            "Urgency",
+        )
         self.action_refresh_tasks()
+
+    @staticmethod
+    def _task_row(task: Task, view: str) -> tuple[str, ...]:
+        """Render one task as a table row for the selected view."""
+        if view == "waiting":
+            when = task.display_wait
+        elif view in {"completed", "deleted"}:
+            when = task.display_end
+        else:
+            when = task.display_due
+
+        return (
+            task.short_uuid,
+            "▶" if task.active else "",
+            task.priority,
+            task.project,
+            when,
+            ",".join(task.tags),
+            task.description,
+            f"{task.urgency:.2f}",
+        )
 
     def _selected_task(self) -> Task | None:
         table = self.query_one("#tasks", DataTable)
@@ -191,12 +221,7 @@ class TaskwarriorApp(App[None]):
         for task in tasks:
             self.tasks[task.short_uuid] = task
             table.add_row(
-                task.short_uuid,
-                task.priority,
-                task.project,
-                task.display_due,
-                task.description,
-                f"{task.urgency:.2f}",
+                *self._task_row(task, self.current_view),
                 key=task.short_uuid,
             )
         details.update(f"{len(tasks)} {self.current_view} task(s).")
