@@ -37,6 +37,24 @@ def test_build_planning_graph_resolves_edges_and_orders_deterministically() -> N
     assert graph.cyclic is False
 
 
+def test_build_planning_graph_uses_full_uuid_to_break_short_uuid_ties() -> None:
+    first = Task(
+        uuid="aaaaaaaa-0000-0000-0000-000000000001",
+        description="First collision",
+        status="pending",
+    )
+    second = Task(
+        uuid="aaaaaaaa-0000-0000-0000-000000000002",
+        description="Second collision",
+        status="pending",
+    )
+
+    graph = build_planning_graph([second, first])
+
+    assert graph.order == (first.uuid, second.uuid)
+    assert graph.remaining == ()
+
+
 def test_build_planning_graph_classifies_bridge_between_cycles_exactly() -> None:
     a = Task(
         uuid="aaaaaaaa-1111-1111-1111-111111111111",
