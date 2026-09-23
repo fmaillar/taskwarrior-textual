@@ -2646,6 +2646,30 @@ async def test_schedule_proposal_apply_updates_project_tasks_and_refreshes() -> 
         assert client.calls.count(("view", "pending")) >= 2
 
 
+async def test_schedule_proposal_escape_cancels() -> None:
+    task = Task(
+        uuid="70707070-1111-1111-1111-111111111111",
+        description="Task",
+        status="pending",
+        project="Infra",
+        estimate_hours=1.0,
+    )
+    client = FakeUiClient(tasks=[task])
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+s")
+        await pilot.pause()
+        assert isinstance(app.screen, ScheduleProposalScreen)
+
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert not isinstance(app.screen, ScheduleProposalScreen)
+        assert client.scheduled_values == []
+
+
 async def test_schedule_proposal_cancel_makes_no_changes() -> None:
     task = Task(
         uuid="71717171-1111-1111-1111-111111111111",
