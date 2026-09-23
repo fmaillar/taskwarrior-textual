@@ -241,8 +241,10 @@ async def test_dependency_action_is_noop_with_empty_table() -> None:
 
     async with app.run_test() as pilot:
         await pilot.pause()
+        screen_before = app.screen
         app.action_show_dependencies()
-        assert app.screen is app
+        assert app.screen is screen_before
+        assert not isinstance(app.screen, DependencyScreen)
 
 
 async def test_dependency_key_opens_local_dependency_screen_without_refetch() -> None:
