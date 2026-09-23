@@ -11,7 +11,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
 
-from .config import PlanningSettings, WorkingCalendar
+from .config import PlanningSettings, WorkingCalendar, load_planning_settings
 from .models import Task
 from .planning import (
     build_absolute_schedule,
@@ -2282,5 +2282,5 @@ class TaskwarriorApp(App[None]):
 
 
 def run() -> None:
-    """Run the Textual application."""
-    TaskwarriorApp().run()
+    """Run the Textual application with persisted planning settings."""
+    TaskwarriorApp(planning_settings=load_planning_settings()).run()
