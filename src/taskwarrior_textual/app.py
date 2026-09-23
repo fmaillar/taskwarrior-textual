@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from typing import ClassVar
 
@@ -859,6 +859,7 @@ class TaskwarriorApp(App[None]):
         settings: PlanningSettings | None = None,
         *,
         now: datetime | None = None,
+        tracked_hours: dict[str, float] | None = None,
     ) -> str:
         """Compute a CPM schedule from resolved dependencies and estimates."""
         if not tasks:
@@ -872,7 +873,12 @@ class TaskwarriorApp(App[None]):
         unresolved = graph.unresolved
         order = list(graph.order)
 
-        schedule = build_relative_schedule(graph, settings, now=now)
+        schedule = build_relative_schedule(
+            graph,
+            settings,
+            now=now,
+            tracked_hours=tracked_hours,
+        )
         assert schedule is not None
         earliest_start = schedule.earliest_start
         earliest_finish = schedule.earliest_finish
@@ -922,7 +928,12 @@ class TaskwarriorApp(App[None]):
                 f"{'milestone' if task.is_milestone else 'task'}"
             )
 
-        absolute = build_absolute_schedule(graph, settings, now=now)
+        absolute = build_absolute_schedule(
+            graph,
+            settings,
+            now=now,
+            tracked_hours=tracked_hours,
+        )
         if absolute is not None:
             deadline_rows = [
                 uuid
@@ -976,6 +987,7 @@ class TaskwarriorApp(App[None]):
         settings: PlanningSettings | None = None,
         *,
         now: datetime | None = None,
+        tracked_hours: dict[str, float] | None = None,
     ) -> str:
         """Render an earliest-start dependency schedule as a compact ASCII Gantt."""
         if not tasks:
@@ -988,7 +1000,12 @@ class TaskwarriorApp(App[None]):
         unresolved = graph.unresolved
         order = list(graph.order)
 
-        schedule = build_relative_schedule(graph, settings, now=now)
+        schedule = build_relative_schedule(
+            graph,
+            settings,
+            now=now,
+            tracked_hours=tracked_hours,
+        )
         assert schedule is not None
         earliest_start = schedule.earliest_start
         earliest_finish = schedule.earliest_finish
@@ -1052,6 +1069,9 @@ class TaskwarriorApp(App[None]):
         cls,
         tasks: list[Task],
         settings: PlanningSettings | None = None,
+        *,
+        now: datetime | None = None,
+        tracked_hours: dict[str, float] | None = None,
     ) -> str:
         """Build an absolute UTC schedule from dependencies and scheduled dates."""
         if not tasks:
@@ -1061,7 +1081,12 @@ class TaskwarriorApp(App[None]):
         if graph.cyclic:
             return "Calendar plan unavailable: dependency cycle detected."
 
-        schedule = build_absolute_schedule(graph, settings)
+        schedule = build_absolute_schedule(
+            graph,
+            settings,
+            now=now,
+            tracked_hours=tracked_hours,
+        )
         if schedule is None:
             return "Calendar plan unavailable: no valid scheduled date in current view."
 
@@ -1155,6 +1180,9 @@ class TaskwarriorApp(App[None]):
         cls,
         tasks: list[Task],
         settings: PlanningSettings | None = None,
+        *,
+        now: datetime | None = None,
+        tracked_hours: dict[str, float] | None = None,
     ) -> str:
         """Summarize scheduled and due constraints in the current view."""
         if not tasks:
@@ -1165,7 +1193,16 @@ class TaskwarriorApp(App[None]):
             return "No scheduled or due constraints in current view."
 
         graph = build_planning_graph(tasks)
-        schedule = None if graph.cyclic else build_absolute_schedule(graph, settings)
+        schedule = (
+            None
+            if graph.cyclic
+            else build_absolute_schedule(
+                graph,
+                settings,
+                now=now,
+                tracked_hours=tracked_hours,
+            )
+        )
         scheduled_count = sum(bool(task.scheduled) for task in constrained)
         due_count = sum(bool(task.due) for task in constrained)
 
@@ -1271,6 +1308,18 @@ class TaskwarriorApp(App[None]):
                 self.view_tasks,
                 self.planning_settings.dependency_depth,
             )
+        except TaskwarriorError as exc:
+            self._show_error(exc)
+            return None
+
+    def _tracked_planning_context(
+        self,
+        tasks: list[Task],
+    ) -> tuple[dict[str, float], datetime] | None:
+        """Read Timewarrior effort once and share one reference instant."""
+        now = datetime.now(UTC)
+        try:
+            return self.client.timewarrior_hours(tasks, now=now), now
         except TaskwarriorError as exc:
             self._show_error(exc)
             return None
@@ -1389,9 +1438,18 @@ class TaskwarriorApp(App[None]):
         tasks = self._expanded_planning_tasks()
         if tasks is None:
             return
+        context = self._tracked_planning_context(tasks)
+        if context is None:
+            return
+        tracked_hours, now = context
         self.push_screen(
             CriticalPathScreen(
-                self._critical_path_summary(tasks, self.planning_settings)
+                self._critical_path_summary(
+                    tasks,
+                    self.planning_settings,
+                    now=now,
+                    tracked_hours=tracked_hours,
+                )
             )
         )
 
@@ -1400,8 +1458,19 @@ class TaskwarriorApp(App[None]):
         tasks = self._expanded_planning_tasks()
         if tasks is None:
             return
+        context = self._tracked_planning_context(tasks)
+        if context is None:
+            return
+        tracked_hours, now = context
         self.push_screen(
-            GanttScreen(self._gantt_summary(tasks, self.planning_settings))
+            GanttScreen(
+                self._gantt_summary(
+                    tasks,
+                    self.planning_settings,
+                    now=now,
+                    tracked_hours=tracked_hours,
+                )
+            )
         )
 
     def action_show_calendar_plan(self) -> None:
@@ -1409,9 +1478,18 @@ class TaskwarriorApp(App[None]):
         tasks = self._expanded_planning_tasks()
         if tasks is None:
             return
+        context = self._tracked_planning_context(tasks)
+        if context is None:
+            return
+        tracked_hours, now = context
         self.push_screen(
             CalendarPlanScreen(
-                self._calendar_plan(tasks, self.planning_settings)
+                self._calendar_plan(
+                    tasks,
+                    self.planning_settings,
+                    now=now,
+                    tracked_hours=tracked_hours,
+                )
             )
         )
 
@@ -1420,9 +1498,18 @@ class TaskwarriorApp(App[None]):
         tasks = self._expanded_planning_tasks()
         if tasks is None:
             return
+        context = self._tracked_planning_context(tasks)
+        if context is None:
+            return
+        tracked_hours, now = context
         self.push_screen(
             ConstraintsScreen(
-                self._constraints_summary(tasks, self.planning_settings)
+                self._constraints_summary(
+                    tasks,
+                    self.planning_settings,
+                    now=now,
+                    tracked_hours=tracked_hours,
+                )
             )
         )
 
