@@ -1841,13 +1841,30 @@ class TaskwarriorApp(App[None]):
             assert relative is not None
             lines.append(f"Graph remaining duration: {relative.duration:.2f}h")
 
-            if graph.order:
-                terminal = min(
+            terminal = min(
+                (
+                    uuid
+                    for uuid in graph.order
+                    if abs(
+                        relative.earliest_finish[uuid] - relative.duration
+                    ) < 1e-9
+                ),
+                key=lambda uuid: (
+                    graph.by_uuid[uuid].short_uuid,
+                    uuid,
+                ),
+            )
+            path = [terminal]
+            current = terminal
+            while graph.dependencies[current]:
+                predecessors = sorted(
                     (
-                        uuid
-                        for uuid in graph.order
-                        if abs(
-                            relative.earliest_finish[uuid] - relative.duration
+                        dependency
+                        for dependency in graph.dependencies[current]
+                        if dependency in relative.critical
+                        and abs(
+                            relative.earliest_finish[dependency]
+                            - relative.earliest_start[current]
                         ) < 1e-9
                     ),
                     key=lambda uuid: (
@@ -1855,34 +1872,16 @@ class TaskwarriorApp(App[None]):
                         uuid,
                     ),
                 )
-                path = [terminal]
-                current = terminal
-                while graph.dependencies[current]:
-                    predecessors = sorted(
-                        (
-                            dependency
-                            for dependency in graph.dependencies[current]
-                            if dependency in relative.critical
-                            and abs(
-                                relative.earliest_finish[dependency]
-                                - relative.earliest_start[current]
-                            ) < 1e-9
-                        ),
-                        key=lambda uuid: (
-                            graph.by_uuid[uuid].short_uuid,
-                            uuid,
-                        ),
-                    )
-                    current = predecessors[0]
-                    path.append(current)
-                path.reverse()
-                lines.append(
-                    "Critical path: "
-                    + " -> ".join(
-                        graph.by_uuid[uuid].short_uuid
-                        for uuid in path
-                    )
+                current = predecessors[0]
+                path.append(current)
+            path.reverse()
+            lines.append(
+                "Critical path: "
+                + " -> ".join(
+                    graph.by_uuid[uuid].short_uuid
+                    for uuid in path
                 )
+            )
             absolute = build_absolute_schedule(
                 graph,
                 resolved_settings,
