@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from taskwarrior_textual.config import PlanningSettings
 from taskwarrior_textual.models import Task
@@ -342,8 +342,8 @@ def test_build_absolute_schedule_uses_configured_working_periods() -> None:
     schedule = build_absolute_schedule(build_planning_graph([task]), settings)
 
     assert schedule is not None
-    assert schedule.starts[task.uuid] == datetime(2026, 9, 25, 10, 0)
-    assert schedule.finishes[task.uuid] == datetime(2026, 9, 25, 16, 0)
+    assert schedule.starts[task.uuid] == datetime(2026, 9, 25, 10, 0, tzinfo=UTC)
+    assert schedule.finishes[task.uuid] == datetime(2026, 9, 25, 16, 0, tzinfo=UTC)
 
 
 def test_build_absolute_schedule_flags_scheduled_outside_working_calendar() -> None:
@@ -382,7 +382,7 @@ def test_build_absolute_schedule_treats_midnight_due_as_end_of_workday() -> None
     schedule = build_absolute_schedule(build_planning_graph([task]))
 
     assert schedule is not None
-    assert schedule.finishes[task.uuid] == datetime(2026, 9, 25, 17, 0)
+    assert schedule.finishes[task.uuid] == datetime(2026, 9, 25, 17, 0, tzinfo=UTC)
     assert schedule.due_slack[task.uuid] == 0.0
 
 
