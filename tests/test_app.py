@@ -2259,6 +2259,238 @@ async def test_timewarrior_report_does_not_open_when_timewarrior_fails() -> None
         assert "timewarrior_hours failed" in str(app.query_one("#details").render())
 
 
+def test_project_dashboard_consolidates_project_effort_graph_and_calendar() -> None:
+    external = Task(
+        uuid="10101010-1111-1111-1111-111111111111",
+        description="External prerequisite",
+        status="pending",
+        project="Shared",
+        scheduled="20260924T080000Z",
+        estimate_hours=1.0,
+    )
+    foundation = Task(
+        uuid="20202020-1111-1111-1111-111111111111",
+        description="Foundation",
+        status="pending",
+        project="Infra",
+        scheduled="20260924T090000Z",
+        depends=(external.uuid,),
+        estimate_hours=3.0,
+    )
+    finish = Task(
+        uuid="30303030-1111-1111-1111-111111111111",
+        description="Finish",
+        status="pending",
+        project="Infra",
+        due="20260924T150000Z",
+        depends=(foundation.uuid,),
+        estimate_hours=2.0,
+    )
+    tracked = {
+        external.uuid: 0.5,
+        foundation.uuid: 1.0,
+    }
+
+    summary = TaskwarriorApp._project_dashboard(
+        "Infra",
+        [foundation, finish],
+        [external, foundation, finish],
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
+        tracked_hours=tracked,
+    )
+
+    assert "Project: Infra" in summary
+    assert (
+        "Project tasks: 2 | External dependencies: 1 | Active: 0 | "
+        "Blocked: 2 | Unestimated: 0"
+    ) in summary
+    assert "Estimate: 5.00h | Tracked: 1.00h | Remaining: 4.00h" in summary
+    assert "Dependency graph: acyclic | Resolved edges: 2 | Unresolved: 0" in summary
+    assert "Graph remaining duration: 4.50h" in summary
+    assert "Critical path: 10101010 -> 20202020 -> 30303030" in summary
+    assert "Planned finish: 2026-09-24 13:30 UTC | Late project tasks: 0" in summary
+    assert (
+        "10101010 | external:Shared | pending | 1.00h | 0.50h | 0.50h"
+        in summary
+    )
+    assert (
+        "20202020 | project | pending | 3.00h | 1.00h | 2.00h"
+        in summary
+    )
+    assert (
+        "30303030 | project | pending | 2.00h | 0.00h | 2.00h"
+        in summary
+    )
+
+
+def test_project_dashboard_reports_cycles_unresolved_and_unestimated_work() -> None:
+    first = Task(
+        uuid="41414141-1111-1111-1111-111111111111",
+        description="First",
+        status="pending",
+        project="Docs",
+        depends=(
+            "42424242-1111-1111-1111-111111111111",
+            "99999999-1111-1111-1111-111111111111",
+        ),
+    )
+    second = Task(
+        uuid="42424242-1111-1111-1111-111111111111",
+        description="Second",
+        status="pending",
+        project="Docs",
+        depends=(first.uuid,),
+        estimate_hours=2.0,
+    )
+
+    summary = TaskwarriorApp._project_dashboard(
+        "Docs",
+        [first, second],
+        [first, second],
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
+        tracked_hours={},
+    )
+
+    assert "Project tasks: 2 | External dependencies: 0" in summary
+    assert "Unestimated: 1" in summary
+    assert "Dependency graph: cycle | Resolved edges: 2 | Unresolved: 1" in summary
+    assert "Graph remaining duration: unavailable (cycle)" in summary
+    assert "Planned finish: unavailable (cycle)" in summary
+    assert "Unresolved dependencies: 41414141 -> 99999999" in summary
+
+
+def test_project_dashboard_handles_empty_project_scope() -> None:
+    assert (
+        TaskwarriorApp._project_dashboard(
+            "Infra",
+            [],
+            [],
+            PlanningSettings(timezone="UTC"),
+            now=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
+            tracked_hours={},
+        )
+        == "No tasks in project."
+    )
+
+
+async def test_project_dashboard_key_uses_selected_project_and_expands_dependencies() -> None:
+    external = Task(
+        uuid="51515151-1111-1111-1111-111111111111",
+        description="External",
+        status="pending",
+        project="Shared",
+        estimate_hours=1.0,
+    )
+    first = Task(
+        uuid="61616161-1111-1111-1111-111111111111",
+        description="First",
+        status="pending",
+        project="Infra",
+        depends=(external.uuid,),
+        estimate_hours=2.0,
+    )
+    second = Task(
+        uuid="71717171-1111-1111-1111-111111111111",
+        description="Second",
+        status="pending",
+        project="Infra",
+        estimate_hours=1.0,
+    )
+    other = Task(
+        uuid="81818181-1111-1111-1111-111111111111",
+        description="Other project",
+        status="pending",
+        project="Docs",
+        estimate_hours=5.0,
+    )
+    client = FakeUiClient(tasks=[first, second, other])
+    client.expanded_tasks = [external, first, second]
+    client.tracked_hours = {first.uuid: 0.5}
+    app = TaskwarriorApp(
+        client=client,
+        planning_settings=PlanningSettings(timezone="UTC"),
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+o")
+        await pilot.pause()
+
+        assert isinstance(app.screen, ProjectDashboardScreen)
+        body = str(app.screen.query_one("#project-dashboard-body").render())
+        assert "Project: Infra" in body
+        assert "Other project" not in body
+        assert "external:Shared" in body
+        assert ("expand_dependencies", app.planning_settings.dependency_depth) in client.calls
+        assert ("timewarrior_hours", 3) in client.calls
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, ProjectDashboardScreen)
+
+
+async def test_project_dashboard_uses_unprojected_scope() -> None:
+    unprojected = Task(
+        uuid="91919191-1111-1111-1111-111111111111",
+        description="Loose task",
+        status="pending",
+        project="",
+        estimate_hours=1.0,
+    )
+    client = FakeUiClient(tasks=[unprojected])
+    client.expanded_tasks = [unprojected]
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+o")
+        await pilot.pause()
+
+        assert isinstance(app.screen, ProjectDashboardScreen)
+        body = str(app.screen.query_one("#project-dashboard-body").render())
+        assert "Project: (none)" in body
+
+
+async def test_project_dashboard_does_not_open_without_selection_or_on_expansion_failure() -> None:
+    empty_client = FakeUiClient(tasks=[])
+    empty_app = TaskwarriorApp(client=empty_client)
+
+    async with empty_app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+o")
+        await pilot.pause()
+        assert not isinstance(empty_app.screen, ProjectDashboardScreen)
+
+    failing_client = FakeUiClient(tasks=SEARCH_TASKS)
+    failing_client.fail = "expand_dependencies"
+    failing_app = TaskwarriorApp(client=failing_client)
+
+    async with failing_app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+o")
+        await pilot.pause()
+        assert not isinstance(failing_app.screen, ProjectDashboardScreen)
+        assert "expand_dependencies failed" in str(
+            failing_app.query_one("#details").render()
+        )
+
+
+async def test_project_dashboard_does_not_open_when_timewarrior_fails() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    client.fail = "timewarrior_hours"
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+o")
+        await pilot.pause()
+
+        assert not isinstance(app.screen, ProjectDashboardScreen)
+        assert "timewarrior_hours failed" in str(app.query_one("#details").render())
+
+
 def test_project_overview_does_not_count_milestones_as_unestimated() -> None:
     milestone = Task(
         uuid="11111111-1111-1111-1111-111111111111",
