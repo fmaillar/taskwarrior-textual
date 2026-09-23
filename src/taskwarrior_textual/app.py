@@ -552,6 +552,37 @@ class DependencyScreen(ModalScreen[None]):
         self.dismiss(None)
 
 
+class ProjectDashboardScreen(ModalScreen[None]):
+    """Read-only consolidated planning dashboard for one project."""
+
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [("escape", "close", "Close")]
+
+    CSS = """
+    ProjectDashboardScreen { align: center middle; }
+    #project-dashboard-box {
+        width: 96%;
+        max-width: 140;
+        height: auto;
+        max-height: 92%;
+        padding: 1 2;
+        border: round $accent;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, body: str) -> None:
+        super().__init__()
+        self.body = body
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="project-dashboard-box"):
+            yield Label("Project dashboard")
+            yield Static(self.body, id="project-dashboard-body")
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 class ProjectOverviewScreen(ModalScreen[None]):
     """Read-only local project summary for the current view."""
 
@@ -734,6 +765,7 @@ class TaskwarriorApp(App[None]):
         ("shift+k", "show_constraints", "Constraints"),
         ("shift+m", "show_milestones", "Milestones"),
         ("shift+p", "show_project_overview", "Projects"),
+        ("shift+o", "show_project_dashboard", "Dashboard"),
         ("shift+t", "show_timewarrior_report", "Timewarrior"),
         ("shift+r", "show_timewarrior_trend", "Trend"),
         ("f", "filter_tag", "Tag"),
@@ -1734,6 +1766,205 @@ class TaskwarriorApp(App[None]):
         return "\n".join(lines)
 
     @staticmethod
+    def _project_dashboard(
+        project: str,
+        project_tasks: list[Task],
+        expanded_tasks: list[Task],
+        settings: PlanningSettings | None = None,
+        *,
+        now: datetime | None = None,
+        tracked_hours: dict[str, float] | None = None,
+    ) -> str:
+        """Consolidate project effort, dependencies, and calendar planning."""
+        if not project_tasks:
+            return "No tasks in project."
+
+        resolved_settings = settings or PlanningSettings()
+        resolved_now = now or datetime.now(UTC)
+        calendar = WorkingCalendar(resolved_settings)
+        tracked = tracked_hours or {}
+        project_uuids = {task.uuid for task in project_tasks}
+
+        estimate = sum(task.estimate_hours for task in project_tasks)
+        tracked_total = sum(tracked.get(task.uuid, 0.0) for task in project_tasks)
+        remaining = sum(
+            remaining_estimate_hours(
+                task,
+                calendar,
+                resolved_now,
+                tracked_hours,
+            )
+            for task in project_tasks
+        )
+        active = sum(task.active for task in project_tasks)
+        blocked = sum(bool(task.depends) for task in project_tasks)
+        unestimated = sum(not task.has_estimate for task in project_tasks)
+        external_count = sum(task.uuid not in project_uuids for task in expanded_tasks)
+
+        graph = build_planning_graph(expanded_tasks)
+        resolved_edges = sum(len(values) for values in graph.dependencies.values())
+        graph_state = "cycle" if graph.cyclic else "acyclic"
+
+        lines = [
+            f"Project: {project or '(none)'}",
+            (
+                f"Project tasks: {len(project_tasks)} | "
+                f"External dependencies: {external_count} | "
+                f"Active: {active} | Blocked: {blocked} | "
+                f"Unestimated: {unestimated}"
+            ),
+            (
+                f"Estimate: {estimate:.2f}h | Tracked: {tracked_total:.2f}h | "
+                f"Remaining: {remaining:.2f}h"
+            ),
+            (
+                f"Dependency graph: {graph_state} | Resolved edges: {resolved_edges} | "
+                f"Unresolved: {len(graph.unresolved)}"
+            ),
+        ]
+
+        if graph.cyclic:
+            lines.extend(
+                [
+                    "Graph remaining duration: unavailable (cycle)",
+                    "Critical path: unavailable (cycle)",
+                    "Planned finish: unavailable (cycle)",
+                ]
+            )
+        else:
+            relative = build_relative_schedule(
+                graph,
+                resolved_settings,
+                now=resolved_now,
+                tracked_hours=tracked_hours,
+            )
+            assert relative is not None
+            lines.append(f"Graph remaining duration: {relative.duration:.2f}h")
+
+            if graph.order:
+                terminal = min(
+                    (
+                        uuid
+                        for uuid in graph.order
+                        if abs(
+                            relative.earliest_finish[uuid] - relative.duration
+                        ) < 1e-9
+                    ),
+                    key=lambda uuid: (
+                        graph.by_uuid[uuid].short_uuid,
+                        uuid,
+                    ),
+                )
+                path = [terminal]
+                current = terminal
+                while graph.dependencies[current]:
+                    predecessors = sorted(
+                        (
+                            dependency
+                            for dependency in graph.dependencies[current]
+                            if dependency in relative.critical
+                            and abs(
+                                relative.earliest_finish[dependency]
+                                - relative.earliest_start[current]
+                            ) < 1e-9
+                        ),
+                        key=lambda uuid: (
+                            graph.by_uuid[uuid].short_uuid,
+                            uuid,
+                        ),
+                    )
+                    if not predecessors:
+                        break
+                    current = predecessors[0]
+                    path.append(current)
+                path.reverse()
+                lines.append(
+                    "Critical path: "
+                    + " -> ".join(
+                        graph.by_uuid[uuid].short_uuid
+                        for uuid in path
+                    )
+                )
+            else:
+                lines.append("Critical path: (none)")
+
+            absolute = build_absolute_schedule(
+                graph,
+                resolved_settings,
+                now=resolved_now,
+                tracked_hours=tracked_hours,
+            )
+            if absolute is None:
+                lines.append("Planned finish: unavailable (no calendar anchor)")
+            else:
+                project_finishes = [
+                    absolute.finishes[uuid]
+                    for uuid in project_uuids
+                    if uuid in absolute.finishes
+                ]
+                if project_finishes:
+                    finish = max(project_finishes)
+                    late_project_tasks = sum(
+                        uuid in absolute.late_by
+                        for uuid in project_uuids
+                    )
+                    lines.append(
+                        f"Planned finish: {finish:%Y-%m-%d %H:%M} UTC | "
+                        f"Late project tasks: {late_project_tasks}"
+                    )
+                else:
+                    lines.append("Planned finish: unavailable")
+
+        if graph.unresolved:
+            lines.append(
+                "Unresolved dependencies: "
+                + "; ".join(
+                    f"{task_uuid} -> {dependency_uuid}"
+                    for task_uuid, dependency_uuid in graph.unresolved
+                )
+            )
+
+        lines.extend(
+            [
+                "",
+                "Tasks",
+                (
+                    "UUID | Scope | State | Estimate | Tracked | Remaining | "
+                    "Due | Description"
+                ),
+            ]
+        )
+        for task in sorted(
+            expanded_tasks,
+            key=lambda item: (
+                item.uuid not in project_uuids,
+                item.project.casefold(),
+                item.short_uuid,
+                item.uuid,
+            ),
+        ):
+            if task.uuid in project_uuids:
+                scope = "project"
+            else:
+                scope = f"external:{task.project or '(none)'}"
+            state = "active" if task.active else task.status
+            estimate_text = task.display_estimate or "—"
+            tracked_value = tracked.get(task.uuid, 0.0)
+            remaining_value = (
+                f"{remaining_estimate_hours(task, calendar, resolved_now, tracked_hours):.2f}h"
+                if task.has_estimate
+                else "—"
+            )
+            due = task.display_due or "—"
+            lines.append(
+                f"{task.short_uuid} | {scope} | {state} | {estimate_text} | "
+                f"{tracked_value:.2f}h | {remaining_value} | {due} | "
+                f"{task.description}"
+            )
+
+        return "\n".join(lines)
+
+    @staticmethod
     def _project_overview(
         tasks: list[Task],
         settings: PlanningSettings | None = None,
@@ -2129,6 +2360,43 @@ class TaskwarriorApp(App[None]):
             TimewarriorReportScreen(
                 self._timewarrior_report(
                     self.view_tasks,
+                    self.planning_settings,
+                    now=now,
+                    tracked_hours=tracked_hours,
+                )
+            )
+        )
+
+    def action_show_project_dashboard(self) -> None:
+        """Show a consolidated dashboard for the selected task's project."""
+        selected = self._selected_task()
+        if selected is None:
+            return
+
+        project_tasks = [
+            task
+            for task in self.view_tasks
+            if task.project == selected.project
+        ]
+        try:
+            expanded_tasks = self.client.expand_dependencies(
+                project_tasks,
+                self.planning_settings.dependency_depth,
+            )
+        except TaskwarriorError as exc:
+            self._show_error(exc)
+            return
+
+        context = self._tracked_planning_context(expanded_tasks)
+        if context is None:
+            return
+        tracked_hours, now = context
+        self.push_screen(
+            ProjectDashboardScreen(
+                self._project_dashboard(
+                    selected.project,
+                    project_tasks,
+                    expanded_tasks,
                     self.planning_settings,
                     now=now,
                     tracked_hours=tracked_hours,
