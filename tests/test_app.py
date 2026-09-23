@@ -236,6 +236,15 @@ def test_dependency_summary_reports_empty_neighborhood() -> None:
     assert "No dependencies in current view." in summary
 
 
+async def test_dependency_action_is_noop_with_empty_table() -> None:
+    app = TaskwarriorApp(client=FakeUiClient(tasks=[]))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.action_show_dependencies()
+        assert app.screen is app
+
+
 async def test_dependency_key_opens_local_dependency_screen_without_refetch() -> None:
     client = FakeUiClient(tasks=SEARCH_TASKS)
     app = TaskwarriorApp(client=client)
