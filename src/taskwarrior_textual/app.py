@@ -123,6 +123,10 @@ class TaskwarriorApp(App[None]):
         ("d", "done_task", "Done"),
         ("shift+d", "delete_task", "Delete"),
         ("y", "sync_tasks", "Sync"),
+        ("1", "view_pending", "Pending"),
+        ("2", "view_waiting", "Waiting"),
+        ("3", "view_completed", "Completed"),
+        ("4", "view_deleted", "Deleted"),
     ]
 
     CSS = """
@@ -134,6 +138,7 @@ class TaskwarriorApp(App[None]):
         super().__init__()
         self.client = client or TaskwarriorClient()
         self.tasks: dict[str, Task] = {}
+        self.current_view = "pending"
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -172,13 +177,13 @@ class TaskwarriorApp(App[None]):
         self.action_refresh_tasks()
 
     def action_refresh_tasks(self) -> None:
-        """Reload pending tasks from Taskwarrior."""
+        """Reload tasks from the currently selected Taskwarrior view."""
         table = self.query_one("#tasks", DataTable)
         details = self.query_one("#details", Static)
         table.clear()
         self.tasks.clear()
         try:
-            tasks = self.client.pending()
+            tasks = self.client.view(self.current_view)
         except TaskwarriorError as exc:
             self._show_error(exc)
             return
@@ -194,7 +199,24 @@ class TaskwarriorApp(App[None]):
                 f"{task.urgency:.2f}",
                 key=task.short_uuid,
             )
-        details.update(f"{len(tasks)} pending task(s).")
+        details.update(f"{len(tasks)} {self.current_view} task(s).")
+
+    def _switch_view(self, name: str) -> None:
+        """Select a named view and reload its tasks."""
+        self.current_view = name
+        self.action_refresh_tasks()
+
+    def action_view_pending(self) -> None:
+        self._switch_view("pending")
+
+    def action_view_waiting(self) -> None:
+        self._switch_view("waiting")
+
+    def action_view_completed(self) -> None:
+        self._switch_view("completed")
+
+    def action_view_deleted(self) -> None:
+        self._switch_view("deleted")
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Inspect the row activated with Enter in the task table."""
