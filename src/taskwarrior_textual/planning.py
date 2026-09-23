@@ -47,6 +47,7 @@ class AbsoluteSchedule:
     starts: dict[str, datetime]
     finishes: dict[str, datetime]
     late_by: dict[str, float]
+    due_slack: dict[str, float]
     invalid_due: tuple[str, ...]
 
 
@@ -177,6 +178,7 @@ def build_absolute_schedule(graph: PlanningGraph) -> AbsoluteSchedule | None:
     starts: dict[str, datetime] = {}
     finishes: dict[str, datetime] = {}
     late_by: dict[str, float] = {}
+    due_slack: dict[str, float] = {}
     invalid_due: list[str] = []
 
     for uuid in graph.order:
@@ -201,8 +203,10 @@ def build_absolute_schedule(graph: PlanningGraph) -> AbsoluteSchedule | None:
             deadline = due
             if due.hour == 0 and due.minute == 0 and due.second == 0:
                 deadline += timedelta(days=1)
-            if finish > deadline:
-                late_by[uuid] = (finish - deadline).total_seconds() / 3600
+            slack_hours = (deadline - finish).total_seconds() / 3600
+            due_slack[uuid] = slack_hours
+            if slack_hours < 0:
+                late_by[uuid] = -slack_hours
 
     return AbsoluteSchedule(
         graph=graph,
@@ -210,5 +214,6 @@ def build_absolute_schedule(graph: PlanningGraph) -> AbsoluteSchedule | None:
         starts=starts,
         finishes=finishes,
         late_by=late_by,
+        due_slack=due_slack,
         invalid_due=tuple(sorted(invalid_due)),
     )
