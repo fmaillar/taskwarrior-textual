@@ -1873,8 +1873,6 @@ class TaskwarriorApp(App[None]):
                             uuid,
                         ),
                     )
-                    if not predecessors:
-                        break
                     current = predecessors[0]
                     path.append(current)
                 path.reverse()
@@ -1885,9 +1883,6 @@ class TaskwarriorApp(App[None]):
                         for uuid in path
                     )
                 )
-            else:
-                lines.append("Critical path: (none)")
-
             absolute = build_absolute_schedule(
                 graph,
                 resolved_settings,
@@ -1902,18 +1897,15 @@ class TaskwarriorApp(App[None]):
                     for uuid in project_uuids
                     if uuid in absolute.finishes
                 ]
-                if project_finishes:
-                    finish = max(project_finishes)
-                    late_project_tasks = sum(
-                        uuid in absolute.late_by
-                        for uuid in project_uuids
-                    )
-                    lines.append(
-                        f"Planned finish: {finish:%Y-%m-%d %H:%M} UTC | "
-                        f"Late project tasks: {late_project_tasks}"
-                    )
-                else:
-                    lines.append("Planned finish: unavailable")
+                finish = max(project_finishes)
+                late_project_tasks = sum(
+                    uuid in absolute.late_by
+                    for uuid in project_uuids
+                )
+                lines.append(
+                    f"Planned finish: {finish:%Y-%m-%d %H:%M} UTC | "
+                    f"Late project tasks: {late_project_tasks}"
+                )
 
         if graph.unresolved:
             lines.append(
