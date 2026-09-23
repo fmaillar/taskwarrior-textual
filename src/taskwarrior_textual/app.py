@@ -231,6 +231,37 @@ class ProjectFilterForm(ModalScreen[str]):
         self.dismiss("")
 
 
+class ConstraintsScreen(ModalScreen[None]):
+    """Read-only scheduling constraint overview."""
+
+    BINDINGS = [("escape", "close", "Close")]
+
+    CSS = """
+    ConstraintsScreen { align: center middle; }
+    #constraints-box {
+        width: 94%;
+        max-width: 135;
+        height: auto;
+        max-height: 90%;
+        padding: 1 2;
+        border: round $accent;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, body: str) -> None:
+        super().__init__()
+        self.body = body
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="constraints-box"):
+            yield Label("Scheduling constraints")
+            yield Static(self.body, id="constraints-body")
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 class CalendarPlanScreen(ModalScreen[None]):
     """Read-only calendar planning view for the current task graph."""
 
@@ -480,6 +511,7 @@ class TaskwarriorApp(App[None]):
         ("shift+c", "show_critical_path", "Critical path"),
         ("shift+h", "show_gantt", "Gantt"),
         ("shift+l", "show_calendar_plan", "Calendar"),
+        ("shift+k", "show_constraints", "Constraints"),
         ("shift+p", "show_project_overview", "Projects"),
         ("f", "filter_tag", "Tag"),
         ("v", "toggle_active", "Active"),
@@ -1007,6 +1039,61 @@ class TaskwarriorApp(App[None]):
 
         return "\n".join(lines)
 
+    @classmethod
+    def _constraints_summary(cls, tasks: list[Task]) -> str:
+        """Summarize scheduled and due constraints in the current view."""
+        if not tasks:
+            return "No tasks in current view."
+
+        constrained = [task for task in tasks if task.scheduled or task.due]
+        if not constrained:
+            return "No scheduled or due constraints in current view."
+
+        graph = build_planning_graph(tasks)
+        schedule = None if graph.cyclic else build_absolute_schedule(graph)
+        scheduled_count = sum(bool(task.scheduled) for task in constrained)
+        due_count = sum(bool(task.due) for task in constrained)
+
+        lines = [
+            f"Constraints: {len(constrained)} | Scheduled: {scheduled_count} | "
+            f"Due: {due_count}",
+            "",
+            "UUID | Scheduled | Due | Planned finish | Status | Description",
+        ]
+
+        for task in sorted(constrained, key=lambda item: item.short_uuid):
+            scheduled_value = cls._planning_datetime(task.scheduled)
+            due_value = cls._planning_datetime(task.due)
+            scheduled_text = task.display_scheduled if task.scheduled else "-"
+            due_text = task.display_due if task.due else "-"
+            planned_finish = "-"
+
+            if task.scheduled and scheduled_value is None:
+                status = "invalid scheduled"
+            elif task.due and due_value is None:
+                status = "invalid due"
+            elif graph.cyclic:
+                status = "cycle"
+            elif schedule is None:
+                status = "deadline"
+            else:
+                planned_finish = f"{schedule.finishes[task.uuid]:%Y-%m-%d %H:%M}"
+                if task.due:
+                    status = (
+                        f"LATE +{schedule.late_by[task.uuid]:.2f}h"
+                        if task.uuid in schedule.late_by
+                        else "on time"
+                    )
+                else:
+                    status = "scheduled"
+
+            lines.append(
+                f"{task.short_uuid} | {scheduled_text} | {due_text} | "
+                f"{planned_finish} | {status} | {task.description}"
+            )
+
+        return "\n".join(lines)
+
     @staticmethod
     def _project_overview(tasks: list[Task]) -> str:
         """Summarize task counts and urgency by project for the current view."""
@@ -1176,6 +1263,10 @@ class TaskwarriorApp(App[None]):
     def action_show_calendar_plan(self) -> None:
         """Show an absolute calendar schedule for the current view."""
         self.push_screen(CalendarPlanScreen(self._calendar_plan(self.view_tasks)))
+
+    def action_show_constraints(self) -> None:
+        """Show scheduled and due constraints for the current view."""
+        self.push_screen(ConstraintsScreen(self._constraints_summary(self.view_tasks)))
 
     def action_show_project_overview(self) -> None:
         """Show a local project summary for the currently loaded view."""
