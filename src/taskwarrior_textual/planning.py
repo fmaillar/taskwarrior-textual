@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
 from .config import PlanningSettings, WorkingCalendar
 from .models import Task
@@ -148,10 +148,42 @@ def build_planning_graph(tasks: list[Task]) -> PlanningGraph:
     )
 
 
-def build_relative_schedule(graph: PlanningGraph) -> RelativeSchedule | None:
-    """Compute earliest/latest timing and slack for an acyclic graph."""
+def _remaining_estimate_hours(
+    task: Task,
+    calendar: WorkingCalendar,
+    now: datetime,
+) -> float:
+    """Return future work remaining for one task."""
+    if task.status in {"completed", "deleted"}:
+        return 0.0
+    if not task.active:
+        return task.estimate_hours
+
+    started = parse_taskwarrior_datetime(task.start)
+    if started is None or started >= now:
+        return task.estimate_hours
+
+    elapsed = calendar.working_hours_between(started, now)
+    return max(0.0, task.estimate_hours - elapsed)
+
+
+def build_relative_schedule(
+    graph: PlanningGraph,
+    settings: PlanningSettings | None = None,
+    *,
+    now: datetime | None = None,
+) -> RelativeSchedule | None:
+    """Compute earliest/latest timing and slack from remaining future work."""
     if graph.cyclic:
         return None
+
+    resolved_settings = settings or PlanningSettings()
+    calendar = WorkingCalendar(resolved_settings)
+    resolved_now = now or datetime.now(UTC)
+    remaining_hours = {
+        uuid: _remaining_estimate_hours(task, calendar, resolved_now)
+        for uuid, task in graph.by_uuid.items()
+    }
 
     earliest_start: dict[str, float] = {}
     earliest_finish: dict[str, float] = {}
@@ -164,7 +196,7 @@ def build_relative_schedule(graph: PlanningGraph) -> RelativeSchedule | None:
             default=0.0,
         )
         earliest_start[uuid] = start
-        earliest_finish[uuid] = start + graph.by_uuid[uuid].estimate_hours
+        earliest_finish[uuid] = start + remaining_hours[uuid]
 
     duration = max(earliest_finish.values(), default=0.0)
     latest_start: dict[str, float] = {}
@@ -176,7 +208,7 @@ def build_relative_schedule(graph: PlanningGraph) -> RelativeSchedule | None:
             )
         else:
             finish = duration
-        latest_start[uuid] = finish - graph.by_uuid[uuid].estimate_hours
+        latest_start[uuid] = finish - remaining_hours[uuid]
 
     slack = {
         uuid: latest_start[uuid] - earliest_start[uuid]
@@ -257,6 +289,8 @@ def _capacity_constrained_start(
 def build_absolute_schedule(
     graph: PlanningGraph,
     settings: PlanningSettings | None = None,
+    *,
+    now: datetime | None = None,
 ) -> AbsoluteSchedule | None:
     """Build an absolute UTC schedule using the configured working calendar."""
     if graph.cyclic:
@@ -264,6 +298,7 @@ def build_absolute_schedule(
 
     resolved_settings = settings or PlanningSettings()
     calendar = WorkingCalendar(resolved_settings)
+    resolved_now = now or datetime.now(UTC)
     scheduled = {
         uuid: parse_taskwarrior_datetime(task.scheduled)
         for uuid, task in graph.by_uuid.items()
@@ -291,6 +326,8 @@ def build_absolute_schedule(
         for uuid, value in scheduled.items()
         if value is not None and uuid not in invalid_scheduled_uuids
     ]
+    if any(task.active for task in graph.by_uuid.values()):
+        anchors.append(resolved_now)
     if not anchors:
         return None
     origin = min(anchors)
@@ -310,12 +347,15 @@ def build_absolute_schedule(
         if any(dependency not in finishes for dependency in dependencies):
             continue
 
+        task = graph.by_uuid[uuid]
         candidates = [origin]
         explicit_start = scheduled[uuid]
-        if explicit_start is not None:
+        if task.active:
+            candidates.append(resolved_now)
+        elif explicit_start is not None:
             candidates.append(explicit_start)
         candidates.extend(finishes[dependency] for dependency in dependencies)
-        estimate_hours = graph.by_uuid[uuid].estimate_hours
+        estimate_hours = _remaining_estimate_hours(task, calendar, resolved_now)
         start = _capacity_constrained_start(
             calendar,
             max(candidates),
