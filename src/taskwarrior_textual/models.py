@@ -22,7 +22,7 @@ def format_taskwarrior_datetime(value: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Task:
-    """Small, UI-oriented representation of a Taskwarrior task."""
+    """UI-oriented representation of a Taskwarrior task."""
 
     uuid: str
     description: str
@@ -31,6 +31,13 @@ class Task:
     priority: str = ""
     due: str = ""
     urgency: float = 0.0
+    tags: tuple[str, ...] = ()
+    depends: tuple[str, ...] = ()
+    wait: str = ""
+    scheduled: str = ""
+    start: str = ""
+    end: str = ""
+    entry: str = ""
 
     @property
     def short_uuid(self) -> str:
@@ -41,6 +48,26 @@ class Task:
     def display_due(self) -> str:
         """Return a compact human-readable due date."""
         return format_taskwarrior_datetime(self.due)
+
+    @property
+    def display_wait(self) -> str:
+        """Return a compact human-readable wait date."""
+        return format_taskwarrior_datetime(self.wait)
+
+    @property
+    def display_scheduled(self) -> str:
+        """Return a compact human-readable scheduled date."""
+        return format_taskwarrior_datetime(self.scheduled)
+
+    @property
+    def display_entry(self) -> str:
+        """Return a compact human-readable entry date."""
+        return format_taskwarrior_datetime(self.entry)
+
+    @property
+    def active(self) -> bool:
+        """Return whether Taskwarrior currently considers the task started."""
+        return bool(self.start and not self.end)
 
     @classmethod
     def from_export(cls, value: dict[str, Any]) -> "Task":
@@ -53,4 +80,11 @@ class Task:
             priority=str(value.get("priority", "")),
             due=str(value.get("due", "")),
             urgency=float(value.get("urgency", 0.0)),
+            tags=tuple(str(tag) for tag in value.get("tags", [])),
+            depends=tuple(str(uuid) for uuid in value.get("depends", [])),
+            wait=str(value.get("wait", "")),
+            scheduled=str(value.get("scheduled", "")),
+            start=str(value.get("start", "")),
+            end=str(value.get("end", "")),
+            entry=str(value.get("entry", "")),
         )
