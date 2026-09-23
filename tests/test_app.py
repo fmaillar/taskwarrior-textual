@@ -5,6 +5,7 @@ from textual.widgets import Button, Input
 from taskwarrior_textual import app as app_module
 from taskwarrior_textual.app import (
     ConfirmDelete,
+    DependencyOverviewScreen,
     DependencyScreen,
     ProjectFilterForm,
     ProjectOverviewScreen,
@@ -270,6 +271,102 @@ async def test_dependency_key_opens_local_dependency_screen_without_refetch() ->
         await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(app.screen, DependencyScreen)
+
+
+def test_dependency_overview_builds_topological_layers() -> None:
+    first = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Foundation",
+        status="pending",
+    )
+    parallel = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="Parallel",
+        status="pending",
+    )
+    middle = Task(
+        uuid="33333333-3333-3333-3333-333333333333",
+        description="Middle",
+        status="pending",
+        depends=(first.uuid,),
+    )
+    last = Task(
+        uuid="44444444-4444-4444-4444-444444444444",
+        description="Last",
+        status="pending",
+        depends=(middle.uuid, parallel.uuid),
+    )
+
+    summary = TaskwarriorApp._dependency_overview([last, middle, parallel, first])
+
+    assert "Tasks: 4 | Resolved edges: 3 | Unresolved: 0" in summary
+    assert "Layer 0: 11111111 Foundation; 22222222 Parallel" in summary
+    assert "Layer 1: 33333333 Middle" in summary
+    assert "Layer 2: 44444444 Last" in summary
+    assert "Cycle detected" not in summary
+
+
+def test_dependency_overview_reports_unresolved_dependencies() -> None:
+    task = Task(
+        uuid="aaaaaaaa-1111-2222-3333-444444444444",
+        description="Needs external work",
+        status="pending",
+        depends=("99999999-aaaa-bbbb-cccc-dddddddddddd",),
+    )
+
+    summary = TaskwarriorApp._dependency_overview([task])
+
+    assert "Tasks: 1 | Resolved edges: 0 | Unresolved: 1" in summary
+    assert "Unresolved dependencies" in summary
+    assert "aaaaaaaa -> 99999999" in summary
+    assert "Layer 0: aaaaaaaa Needs external work" in summary
+
+
+def test_dependency_overview_detects_cycles() -> None:
+    first = Task(
+        uuid="aaaaaaaa-1111-2222-3333-444444444444",
+        description="First",
+        status="pending",
+        depends=("bbbbbbbb-1111-2222-3333-444444444444",),
+    )
+    second = Task(
+        uuid="bbbbbbbb-1111-2222-3333-444444444444",
+        description="Second",
+        status="pending",
+        depends=(first.uuid,),
+    )
+
+    summary = TaskwarriorApp._dependency_overview([second, first])
+
+    assert "Tasks: 2 | Resolved edges: 2 | Unresolved: 0" in summary
+    assert "Cycle detected among: aaaaaaaa First; bbbbbbbb Second" in summary
+    assert "Layer 0:" not in summary
+
+
+def test_dependency_overview_handles_empty_view() -> None:
+    assert TaskwarriorApp._dependency_overview([]) == "No tasks in current view."
+
+
+async def test_dependency_overview_key_opens_local_screen_without_refetch() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial_view_calls = client.calls.count(("view", "pending"))
+
+        await pilot.press("shift+g")
+        await pilot.pause()
+
+        assert isinstance(app.screen, DependencyOverviewScreen)
+        body = str(app.screen.query_one("#dependency-overview-body").render())
+        assert "Tasks: 3 | Resolved edges: 1 | Unresolved: 0" in body
+        assert "Layer 0:" in body
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, DependencyOverviewScreen)
 
 
 def test_project_overview_groups_current_view_deterministically() -> None:
