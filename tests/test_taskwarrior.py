@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from taskwarrior_textual.models import Task
 from taskwarrior_textual.taskwarrior import TaskwarriorClient, TaskwarriorError
 
 
@@ -231,6 +232,85 @@ def test_run_wraps_oserror(monkeypatch) -> None:
     client = TaskwarriorClient(command="/bin/task")
     with pytest.raises(TaskwarriorError, match="Cannot execute"):
         client._run(["list"])
+
+
+class DependencyExpansionClient(TaskwarriorClient):
+    def __post_init__(self) -> None:
+        self.command = "task"
+        self.exports: list[str] = []
+        self.by_filter: dict[str, list[Task]] = {}
+
+    def export(self, *filters: str) -> list[Task]:
+        assert len(filters) == 1
+        dependency = filters[0]
+        self.exports.append(dependency)
+        return self.by_filter.get(dependency, [])
+
+
+def test_expand_dependencies_respects_depth_and_fetches_only_missing_tasks() -> None:
+    root = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Root",
+        status="pending",
+        depends=("22222222-2222-2222-2222-222222222222",),
+    )
+    direct = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="Direct",
+        status="completed",
+        depends=("33333333-3333-3333-3333-333333333333",),
+    )
+    indirect = Task(
+        uuid="33333333-3333-3333-3333-333333333333",
+        description="Indirect",
+        status="completed",
+    )
+    client = DependencyExpansionClient()
+    client.by_filter = {
+        direct.uuid: [direct],
+        indirect.uuid: [indirect],
+    }
+
+    assert client.expand_dependencies([root], 0) == [root]
+    assert client.exports == []
+
+    depth_one = client.expand_dependencies([root], 1)
+    assert [task.uuid for task in depth_one] == [root.uuid, direct.uuid]
+    assert client.exports == [direct.uuid]
+
+    client.exports.clear()
+    depth_two = client.expand_dependencies([root], 2)
+    assert [task.uuid for task in depth_two] == [root.uuid, direct.uuid, indirect.uuid]
+    assert client.exports == [direct.uuid, indirect.uuid]
+
+
+def test_expand_dependencies_unlimited_stops_on_cycles_duplicates_and_missing_tasks() -> None:
+    root = Task(
+        uuid="aaaaaaaa-1111-1111-1111-111111111111",
+        description="Root",
+        status="pending",
+        depends=(
+            "bbbbbbbb-1111-1111-1111-111111111111",
+            "cccccccc-1111-1111-1111-111111111111",
+        ),
+    )
+    dependency = Task(
+        uuid="bbbbbbbb-1111-1111-1111-111111111111",
+        description="Dependency",
+        status="completed",
+        depends=(root.uuid, "dddddddd-1111-1111-1111-111111111111"),
+    )
+    client = DependencyExpansionClient()
+    client.by_filter = {dependency.uuid: [dependency]}
+
+    expanded = client.expand_dependencies([root], -1)
+
+    assert [task.uuid for task in expanded] == [root.uuid, dependency.uuid]
+    assert client.exports == [
+        dependency.uuid,
+        "cccccccc-1111-1111-1111-111111111111",
+        "dddddddd-1111-1111-1111-111111111111",
+    ]
 
 
 class ViewRecordingClient(TaskwarriorClient):
