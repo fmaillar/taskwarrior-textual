@@ -68,13 +68,22 @@ def test_load_planning_settings_accepts_partial_planning_table(tmp_path: Path) -
     assert settings.capacity is None
 
 
+def test_load_planning_settings_ignores_other_top_level_tables(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('[ui]\ncompact = true\n')
+
+    assert load_planning_settings(path) == PlanningSettings()
+
+
 @pytest.mark.parametrize(
     "content, message",
     [
         ("not = [valid", "TOML"),
         ('planning = "wrong"', "planning"),
         ('[planning]\nunknown = 1', "unknown planning key"),
+        ('[planning]\ntimezone = 1', "timezone"),
         ('[planning]\nworkdays = "0,1,2"', "workdays"),
+        ('[planning]\nwork_periods = "08:00-12:00"', "work_periods"),
         ('[planning]\nwork_periods = ["08:00-12:00"]', "work_periods"),
         ('[planning]\nholidays = [1]', "holidays"),
         ('[planning]\ndependency_depth = "ten"', "dependency_depth"),
