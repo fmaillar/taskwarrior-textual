@@ -3,7 +3,7 @@ from __future__ import annotations
 from textual.widgets import Button, Input
 
 from taskwarrior_textual import app as app_module
-from taskwarrior_textual.app import ConfirmDelete, TaskForm, TaskwarriorApp
+from taskwarrior_textual.app import ConfirmDelete, SearchForm, TaskForm, TaskwarriorApp
 from taskwarrior_textual.models import Task
 from taskwarrior_textual.taskwarrior import TaskwarriorError
 
@@ -21,6 +21,42 @@ TASK = Task(
     scheduled="20260924T090000Z",
     start="20260923T070000Z",
 )
+
+
+
+
+SEARCH_TASKS = [
+    Task(
+        uuid="aaaaaaaa-1111-2222-3333-444444444444",
+        description="Write release notes",
+        status="pending",
+        project="Docs",
+        priority="M",
+        due="20261002T000000Z",
+        urgency=4.0,
+        tags=("release", "writing"),
+    ),
+    Task(
+        uuid="bbbbbbbb-1111-2222-3333-444444444444",
+        description="Fix mail server",
+        status="pending",
+        project="Infra",
+        priority="H",
+        due="20260925T000000Z",
+        urgency=12.0,
+        tags=("mail", "server"),
+    ),
+    Task(
+        uuid="cccccccc-1111-2222-3333-444444444444",
+        description="Buy cable",
+        status="pending",
+        project="",
+        priority="",
+        due="",
+        urgency=1.0,
+        tags=("hardware",),
+    ),
+]
 
 
 class FakeUiClient:
@@ -450,6 +486,128 @@ async def test_numeric_keys_switch_views_and_refresh() -> None:
             await pilot.pause()
             assert app.current_view == expected
             assert ("view", expected) in client.calls
+
+
+
+def test_search_matches_description_project_and_tags_case_insensitively() -> None:
+    assert TaskwarriorApp._matches_search(SEARCH_TASKS[0], "RELEASE") is True
+    assert TaskwarriorApp._matches_search(SEARCH_TASKS[1], "infra") is True
+    assert TaskwarriorApp._matches_search(SEARCH_TASKS[1], "MAIL") is True
+    assert TaskwarriorApp._matches_search(SEARCH_TASKS[2], "database") is False
+
+
+def test_sort_cycle_is_deterministic() -> None:
+    assert [task.short_uuid for task in TaskwarriorApp._sort_tasks(SEARCH_TASKS, "urgency")] == [
+        "bbbbbbbb",
+        "aaaaaaaa",
+        "cccccccc",
+    ]
+    assert [task.short_uuid for task in TaskwarriorApp._sort_tasks(SEARCH_TASKS, "when")] == [
+        "bbbbbbbb",
+        "aaaaaaaa",
+        "cccccccc",
+    ]
+    assert [task.short_uuid for task in TaskwarriorApp._sort_tasks(SEARCH_TASKS, "project")] == [
+        "aaaaaaaa",
+        "bbbbbbbb",
+        "cccccccc",
+    ]
+    assert [task.short_uuid for task in TaskwarriorApp._sort_tasks(SEARCH_TASKS, "priority")] == [
+        "bbbbbbbb",
+        "aaaaaaaa",
+        "cccccccc",
+    ]
+    assert TaskwarriorApp._sort_tasks(SEARCH_TASKS, None) == SEARCH_TASKS
+
+
+async def test_search_key_opens_search_form_and_enter_filters_locally() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial_view_calls = client.calls.count(("view", "pending"))
+        await pilot.press("/")
+        await pilot.pause()
+        assert isinstance(app.screen, SearchForm)
+        search = app.screen.query_one("#search", Input)
+        search.value = "mail"
+        app.screen.on_input_submitted(Input.Submitted(search, search.value))
+        await pilot.pause()
+
+        assert app.search_query == "mail"
+        assert app.query_one("#tasks").row_count == 1
+        assert app._selected_task() == SEARCH_TASKS[1]
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+
+
+async def test_empty_search_restores_full_current_view_without_refetch() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._apply_search("mail")
+        assert app.query_one("#tasks").row_count == 1
+        initial_view_calls = client.calls.count(("view", "pending"))
+
+        app._apply_search("")
+
+        assert app.search_query == ""
+        assert app.query_one("#tasks").row_count == 3
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+
+
+async def test_escape_in_search_restores_full_current_view() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._apply_search("mail")
+        await pilot.press("/")
+        await pilot.pause()
+        assert isinstance(app.screen, SearchForm)
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert app.search_query == ""
+        assert app.query_one("#tasks").row_count == 3
+
+
+async def test_sort_key_cycles_locally_without_refetch() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial_view_calls = client.calls.count(("view", "pending"))
+        expected = ["urgency", "when", "project", "priority", None]
+        for sort_key in expected:
+            await pilot.press("t")
+            await pilot.pause()
+            assert app.sort_key == sort_key
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+
+
+async def test_view_change_refetches_then_reapplies_search_and_sort() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._apply_search("mail")
+        app.action_cycle_sort()
+        assert app.sort_key == "urgency"
+
+        await pilot.press("2")
+        await pilot.pause()
+
+        assert app.current_view == "waiting"
+        assert app.search_query == "mail"
+        assert app.sort_key == "urgency"
+        assert app.query_one("#tasks").row_count == 1
+        assert ("view", "waiting") in client.calls
 
 
 def test_run_launches_application(monkeypatch) -> None:
