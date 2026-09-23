@@ -788,7 +788,7 @@ class TaskwarriorApp(App[None]):
                     for uuid in remaining
                     if not (dependencies[uuid] & remaining)
                 ),
-                key=lambda uuid: by_uuid[uuid].short_uuid,
+                key=lambda uuid: (by_uuid[uuid].short_uuid, uuid),
             )
             if not ready:
                 break
@@ -813,7 +813,7 @@ class TaskwarriorApp(App[None]):
         if cycle_nodes:
             rendered = "; ".join(
                 f"{by_uuid[uuid].short_uuid} {by_uuid[uuid].description}"
-                for uuid in sorted(cycle_nodes, key=lambda item: by_uuid[item].short_uuid)
+                for uuid in sorted(cycle_nodes, key=lambda item: (by_uuid[item].short_uuid, item))
             )
             lines.append(f"Cycle detected among: {rendered}")
 
@@ -822,7 +822,7 @@ class TaskwarriorApp(App[None]):
                 f"{by_uuid[uuid].short_uuid} {by_uuid[uuid].description}"
                 for uuid in sorted(
                     blocked_by_cycle,
-                    key=lambda item: by_uuid[item].short_uuid,
+                    key=lambda item: (by_uuid[item].short_uuid, item),
                 )
             )
             lines.append(f"Blocked by cycle: {rendered}")
@@ -864,7 +864,7 @@ class TaskwarriorApp(App[None]):
                 for uuid in order
                 if abs(earliest_finish[uuid] - project_duration) < 1e-9
             ),
-            key=lambda uuid: by_uuid[uuid].short_uuid,
+            key=lambda uuid: (by_uuid[uuid].short_uuid, uuid),
         )
         path = [terminal]
         current = terminal
@@ -878,7 +878,7 @@ class TaskwarriorApp(App[None]):
                         earliest_finish[dependency] - earliest_start[current]
                     ) < 1e-9
                 ),
-                key=lambda uuid: by_uuid[uuid].short_uuid,
+                key=lambda uuid: (by_uuid[uuid].short_uuid, uuid),
             )
             current = candidates[0]
             path.append(current)
@@ -891,7 +891,7 @@ class TaskwarriorApp(App[None]):
             "",
             "UUID | Estimate | ES | EF | Slack | Critical | Kind",
         ]
-        for uuid in sorted(order, key=lambda item: by_uuid[item].short_uuid):
+        for uuid in sorted(order, key=lambda item: (by_uuid[item].short_uuid, item)):
             task = by_uuid[uuid]
             lines.append(
                 f"{task.short_uuid} | {task.display_estimate or '0.00h'} | "
@@ -920,7 +920,7 @@ class TaskwarriorApp(App[None]):
                 )
                 for uuid in sorted(
                     deadline_rows,
-                    key=lambda item: by_uuid[item].short_uuid,
+                    key=lambda item: (by_uuid[item].short_uuid, item),
                 ):
                     task = by_uuid[uuid]
                     lines.append(
@@ -1099,7 +1099,7 @@ class TaskwarriorApp(App[None]):
 
         milestones = sorted(
             (task for task in tasks if task.is_milestone),
-            key=lambda task: task.short_uuid,
+            key=lambda task: (task.short_uuid, task.uuid),
         )
         if not milestones:
             return "No explicit zero-duration milestones in current view."
@@ -1132,7 +1132,7 @@ class TaskwarriorApp(App[None]):
             "UUID | Scheduled | Due | Planned finish | Status | Description",
         ]
 
-        for task in sorted(constrained, key=lambda item: item.short_uuid):
+        for task in sorted(constrained, key=lambda item: (item.short_uuid, item.uuid)):
             scheduled_value = cls._planning_datetime(task.scheduled)
             due_value = cls._planning_datetime(task.due)
             scheduled_text = task.display_scheduled if task.scheduled else "-"
