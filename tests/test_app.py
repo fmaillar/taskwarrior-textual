@@ -16,6 +16,7 @@ from taskwarrior_textual.app import (
     GanttScreen,
     MilestonesScreen,
     PlanningForm,
+    PlanningHealthScreen,
     ProjectDashboardScreen,
     ProjectFilterForm,
     ProjectOverviewScreen,
@@ -2266,6 +2267,169 @@ async def test_timewarrior_report_does_not_open_when_timewarrior_fails() -> None
 
         assert not isinstance(app.screen, TimewarriorReportScreen)
         assert "timewarrior_hours failed" in str(app.query_one("#details").render())
+
+
+def test_planning_health_reports_clean_expanded_graph() -> None:
+    first = Task(
+        uuid="81818181-1111-1111-1111-111111111111",
+        description="First",
+        status="pending",
+        scheduled="20260923T080000Z",
+        estimate_hours=1.0,
+    )
+    second = Task(
+        uuid="82828282-1111-1111-1111-111111111111",
+        description="Second",
+        status="pending",
+        depends=(first.uuid,),
+        due="20260923T110000Z",
+        estimate_hours=1.0,
+    )
+
+    summary = TaskwarriorApp._planning_health(
+        [first, second],
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+        tracked_hours={},
+    )
+
+    assert "Planning health" in summary
+    assert "Tasks: 2 | Cycle nodes: 0 | Blocked by cycle: 0 | Unresolved: 0" in summary
+    assert (
+        "Unestimated: 0 | Invalid scheduled: 0 | Invalid due: 0 | "
+        "Projected late: 0 | Overtracked: 0"
+    ) in summary
+    assert "Health: clean" in summary
+
+
+def test_planning_health_reports_all_issue_classes() -> None:
+    first = Task(
+        uuid="83838383-1111-1111-1111-111111111111",
+        description="First",
+        status="pending",
+        scheduled="not-a-date",
+        due="not-a-date",
+        depends=(
+            "84848484-1111-1111-1111-111111111111",
+            "99999999-1111-1111-1111-111111111111",
+        ),
+    )
+    second = Task(
+        uuid="84848484-1111-1111-1111-111111111111",
+        description="Second",
+        status="pending",
+        depends=(first.uuid,),
+        estimate_hours=1.0,
+    )
+    overtracked = Task(
+        uuid="85858585-1111-1111-1111-111111111111",
+        description="Overtracked",
+        status="pending",
+        scheduled="20260923T080000Z",
+        due="20260923T090000Z",
+        estimate_hours=1.0,
+    )
+
+    summary = TaskwarriorApp._planning_health(
+        [first, second, overtracked],
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+        tracked_hours={overtracked.uuid: 2.0},
+    )
+
+    assert "Cycle nodes: 2" in summary
+    assert "Unresolved: 1" in summary
+    assert "Unestimated: 1" in summary
+    assert "Invalid scheduled: 1" in summary
+    assert "Invalid due: 1" in summary
+    assert "Overtracked: 1" in summary
+    assert "Cycle nodes: 83838383, 84848484" in summary
+    assert "Unresolved dependencies: 83838383 -> 99999999" in summary
+    assert "Unestimated tasks: 83838383" in summary
+    assert "Invalid scheduled: 83838383" in summary
+    assert "Invalid due: 83838383" in summary
+    assert "Overtracked estimates: 85858585 +1.00h" in summary
+
+
+def test_planning_health_reports_projected_lateness() -> None:
+    task = Task(
+        uuid="86868686-1111-1111-1111-111111111111",
+        description="Late",
+        status="pending",
+        scheduled="20260923T080000Z",
+        due="20260923T090000Z",
+        estimate_hours=3.0,
+    )
+
+    summary = TaskwarriorApp._planning_health(
+        [task],
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+        tracked_hours={},
+    )
+
+    assert "Projected late: 1" in summary
+    assert "Projected late tasks: 86868686 +2.00h" in summary
+
+
+def test_planning_health_handles_empty_scope() -> None:
+    assert TaskwarriorApp._planning_health([]) == "No tasks in current view."
+
+
+async def test_planning_health_key_expands_dependencies_and_opens_screen() -> None:
+    external = Task(
+        uuid="87878787-1111-1111-1111-111111111111",
+        description="External",
+        status="pending",
+        estimate_hours=1.0,
+    )
+    task = Task(
+        uuid="88888888-1111-1111-1111-111111111111",
+        description="Task",
+        status="pending",
+        depends=(external.uuid,),
+        estimate_hours=1.0,
+    )
+    client = FakeUiClient(tasks=[task])
+    client.expanded_tasks = [external, task]
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+i")
+        await pilot.pause()
+
+        assert isinstance(app.screen, PlanningHealthScreen)
+        body = str(app.screen.query_one("#planning-health-body").render())
+        assert "Tasks: 2" in body
+        assert ("expand_dependencies", app.planning_settings.dependency_depth) in client.calls
+        assert ("timewarrior_hours", 2) in client.calls
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, PlanningHealthScreen)
+
+
+async def test_planning_health_does_not_open_on_dependency_or_time_failure() -> None:
+    dependency_client = FakeUiClient(tasks=SEARCH_TASKS)
+    dependency_client.fail = "expand_dependencies"
+    dependency_app = TaskwarriorApp(client=dependency_client)
+
+    async with dependency_app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+i")
+        await pilot.pause()
+        assert not isinstance(dependency_app.screen, PlanningHealthScreen)
+
+    time_client = FakeUiClient(tasks=SEARCH_TASKS)
+    time_client.fail = "timewarrior_hours"
+    time_app = TaskwarriorApp(client=time_client)
+
+    async with time_app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+i")
+        await pilot.pause()
+        assert not isinstance(time_app.screen, PlanningHealthScreen)
 
 
 def test_schedule_proposal_plans_unscheduled_project_tasks_from_now() -> None:
