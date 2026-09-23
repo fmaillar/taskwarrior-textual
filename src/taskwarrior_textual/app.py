@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
@@ -114,7 +116,7 @@ class TaskForm(ModalScreen[dict[str, str] | None]):
 class SearchForm(ModalScreen[str]):
     """Modal text search over the currently loaded Taskwarrior view."""
 
-    BINDINGS = [("escape", "clear_search", "Clear search")]
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [("escape", "clear_search", "Clear search")]
 
     CSS = """
     SearchForm { align: center top; padding-top: 3; }
@@ -154,7 +156,7 @@ class SearchForm(ModalScreen[str]):
 class TagFilterForm(ModalScreen[str]):
     """Modal exact tag filter over the currently loaded view."""
 
-    BINDINGS = [("escape", "clear_filter", "Clear tag filter")]
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [("escape", "clear_filter", "Clear tag filter")]
 
     CSS = """
     TagFilterForm { align: center top; padding-top: 3; }
@@ -194,7 +196,7 @@ class TagFilterForm(ModalScreen[str]):
 class ProjectFilterForm(ModalScreen[str]):
     """Modal exact project filter over the currently loaded view."""
 
-    BINDINGS = [("escape", "clear_filter", "Clear project filter")]
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [("escape", "clear_filter", "Clear project filter")]
 
     CSS = """
     ProjectFilterForm { align: center top; padding-top: 3; }
@@ -234,7 +236,7 @@ class ProjectFilterForm(ModalScreen[str]):
 class MilestonesScreen(ModalScreen[None]):
     """Read-only explicit milestone overview."""
 
-    BINDINGS = [("escape", "close", "Close")]
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [("escape", "close", "Close")]
 
     CSS = """
     MilestonesScreen { align: center middle; }
@@ -265,7 +267,7 @@ class MilestonesScreen(ModalScreen[None]):
 class ConstraintsScreen(ModalScreen[None]):
     """Read-only scheduling constraint overview."""
 
-    BINDINGS = [("escape", "close", "Close")]
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [("escape", "close", "Close")]
 
     CSS = """
     ConstraintsScreen { align: center middle; }
@@ -296,7 +298,7 @@ class ConstraintsScreen(ModalScreen[None]):
 class CalendarPlanScreen(ModalScreen[None]):
     """Read-only calendar planning view for the current task graph."""
 
-    BINDINGS = [("escape", "close", "Close")]
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [("escape", "close", "Close")]
 
     CSS = """
     CalendarPlanScreen { align: center middle; }
@@ -327,7 +329,7 @@ class CalendarPlanScreen(ModalScreen[None]):
 class GanttScreen(ModalScreen[None]):
     """Read-only local Gantt-like planning view."""
 
-    BINDINGS = [("escape", "close", "Close")]
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [("escape", "close", "Close")]
 
     CSS = """
     GanttScreen { align: center middle; }
@@ -358,7 +360,7 @@ class GanttScreen(ModalScreen[None]):
 class CriticalPathScreen(ModalScreen[None]):
     """Read-only critical-path analysis for the current view."""
 
-    BINDINGS = [("escape", "close", "Close")]
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [("escape", "close", "Close")]
 
     CSS = """
     CriticalPathScreen { align: center middle; }
@@ -389,7 +391,7 @@ class CriticalPathScreen(ModalScreen[None]):
 class DependencyOverviewScreen(ModalScreen[None]):
     """Read-only dependency graph overview for the current view."""
 
-    BINDINGS = [("escape", "close", "Close")]
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [("escape", "close", "Close")]
 
     CSS = """
     DependencyOverviewScreen { align: center middle; }
@@ -420,7 +422,7 @@ class DependencyOverviewScreen(ModalScreen[None]):
 class DependencyScreen(ModalScreen[None]):
     """Read-only local dependency neighborhood for one task."""
 
-    BINDINGS = [("escape", "close", "Close")]
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [("escape", "close", "Close")]
 
     CSS = """
     DependencyScreen { align: center middle; }
@@ -452,7 +454,7 @@ class DependencyScreen(ModalScreen[None]):
 class ProjectOverviewScreen(ModalScreen[None]):
     """Read-only local project summary for the current view."""
 
-    BINDINGS = [("escape", "close", "Close")]
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [("escape", "close", "Close")]
 
     CSS = """
     ProjectOverviewScreen { align: center middle; }
@@ -517,7 +519,7 @@ class TaskwarriorApp(App[None]):
     TITLE = "Taskwarrior Textual"
     SUB_TITLE = "Taskwarrior 3 frontend"
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("q", "quit", "Quit"),
         ("r", "refresh_tasks", "Refresh"),
         ("enter", "inspect_task", "Inspect"),
@@ -799,8 +801,8 @@ class TaskwarriorApp(App[None]):
         blocked_by_cycle = graph.blocked_by_cycle
         resolved_edges = sum(len(values) for values in dependencies.values())
         lines = [
-            f"Tasks: {len(tasks)} | Resolved edges: {resolved_edges} | "
-            f"Unresolved: {len(unresolved)}"
+            (f"Tasks: {len(tasks)} | Resolved edges: {resolved_edges} | "
+            f"Unresolved: {len(unresolved)}")
         ]
 
         for index, layer in enumerate(layers):
@@ -958,8 +960,6 @@ class TaskwarriorApp(App[None]):
         if graph.cyclic:
             return "Gantt unavailable: dependency cycle detected."
         by_uuid = graph.by_uuid
-        dependencies = graph.dependencies
-        successors = graph.successors
         unresolved = graph.unresolved
         order = list(graph.order)
 
@@ -979,13 +979,13 @@ class TaskwarriorApp(App[None]):
             key=lambda item: (earliest_start[item], by_uuid[item].short_uuid),
         ):
             task = by_uuid[uuid]
-            offset = int(round(earliest_start[uuid]))
+            offset = round(earliest_start[uuid])
             if task.is_milestone:
                 bar = " " * offset + "◆"
             elif not task.has_estimate:
                 bar = " " * offset + "·"
             else:
-                width = max(1, int(round(task.estimate_hours)))
+                width = max(1, round(task.estimate_hours))
                 bar = " " * offset + "█" * width
             marker = "*" if uuid in critical else " "
             lines.append(
@@ -1040,8 +1040,8 @@ class TaskwarriorApp(App[None]):
         project_finish = max(finishes.values())
 
         lines = [
-            f"Calendar origin: {schedule.origin:%Y-%m-%d %H:%M} UTC | "
-            f"Project finish: {project_finish:%Y-%m-%d %H:%M} UTC",
+            (f"Calendar origin: {schedule.origin:%Y-%m-%d %H:%M} UTC | "
+            f"Project finish: {project_finish:%Y-%m-%d %H:%M} UTC"),
             f"Late tasks: {len(late_by)}",
             "",
             "UUID | Start -> Finish | Due | Status | Description",
@@ -1126,8 +1126,8 @@ class TaskwarriorApp(App[None]):
         due_count = sum(bool(task.due) for task in constrained)
 
         lines = [
-            f"Constraints: {len(constrained)} | Scheduled: {scheduled_count} | "
-            f"Due: {due_count}",
+            (f"Constraints: {len(constrained)} | Scheduled: {scheduled_count} | "
+            f"Due: {due_count}"),
             "",
             "UUID | Scheduled | Due | Planned finish | Status | Description",
         ]
