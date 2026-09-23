@@ -340,10 +340,11 @@ def build_absolute_schedule(
     if any(task.active for task in graph.by_uuid.values()):
         anchors.append(resolved_now)
     if origin is not None:
-        anchors.append(calendar.next_working_time(origin))
-    if not anchors:
+        resolved_origin = calendar.next_working_time(origin)
+    elif anchors:
+        resolved_origin = min(anchors)
+    else:
         return None
-    resolved_origin = min(anchors)
 
     starts: dict[str, datetime] = {}
     finishes: dict[str, datetime] = {}
