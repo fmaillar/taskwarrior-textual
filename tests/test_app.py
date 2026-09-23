@@ -6,6 +6,7 @@ from taskwarrior_textual import app as app_module
 from taskwarrior_textual.app import (
     CalendarPlanScreen,
     ConfirmDelete,
+    ConstraintsScreen,
     CriticalPathScreen,
     DependencyOverviewScreen,
     DependencyScreen,
@@ -791,6 +792,139 @@ async def test_calendar_plan_key_opens_local_screen_without_refetch() -> None:
         await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(app.screen, CalendarPlanScreen)
+
+
+def test_constraints_summary_reports_scheduled_deadlines_and_lateness() -> None:
+    anchor = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Anchor",
+        status="pending",
+        scheduled="20260924T090000Z",
+        estimate_hours=2.0,
+    )
+    late = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="Late",
+        status="pending",
+        depends=(anchor.uuid,),
+        due="20260924T100000Z",
+        estimate_hours=1.0,
+    )
+    due_only = Task(
+        uuid="33333333-3333-3333-3333-333333333333",
+        description="Deadline only",
+        status="pending",
+        due="20260925T000000Z",
+    )
+
+    summary = TaskwarriorApp._constraints_summary([late, due_only, anchor])
+
+    assert "Constraints: 3 | Scheduled: 1 | Due: 2" in summary
+    assert (
+        "11111111 | 2026-09-24 09:00 | - | 2026-09-24 11:00 | "
+        "scheduled | Anchor"
+    ) in summary
+    assert (
+        "22222222 | - | 2026-09-24 10:00 | 2026-09-24 12:00 | "
+        "LATE +2.00h | Late"
+    ) in summary
+    assert (
+        "33333333 | - | 2026-09-25 | 2026-09-24 09:00 | "
+        "on time | Deadline only"
+    ) in summary
+
+
+def test_constraints_summary_handles_invalid_values_and_no_anchor() -> None:
+    invalid_scheduled = Task(
+        uuid="aaaaaaaa-1111-2222-3333-444444444444",
+        description="Bad scheduled",
+        status="pending",
+        scheduled="tomorrow",
+    )
+    invalid_due = Task(
+        uuid="bbbbbbbb-1111-2222-3333-444444444444",
+        description="Bad due",
+        status="pending",
+        due="not-a-date",
+    )
+    due_only = Task(
+        uuid="cccccccc-1111-2222-3333-444444444444",
+        description="Due only",
+        status="pending",
+        due="20260925T120000Z",
+    )
+
+    summary = TaskwarriorApp._constraints_summary(
+        [due_only, invalid_due, invalid_scheduled]
+    )
+
+    assert "Constraints: 3 | Scheduled: 1 | Due: 2" in summary
+    assert "aaaaaaaa | tomorrow | - | - | invalid scheduled | Bad scheduled" in summary
+    assert "bbbbbbbb | - | not-a-date | - | invalid due | Bad due" in summary
+    assert "cccccccc | - | 2026-09-25 12:00 | - | deadline | Due only" in summary
+
+
+def test_constraints_summary_reports_cycles_and_empty_constraints() -> None:
+    unconstrained = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Free",
+        status="pending",
+    )
+    assert (
+        TaskwarriorApp._constraints_summary([unconstrained])
+        == "No scheduled or due constraints in current view."
+    )
+    assert TaskwarriorApp._constraints_summary([]) == "No tasks in current view."
+
+    first = Task(
+        uuid="aaaaaaaa-1111-2222-3333-444444444444",
+        description="First",
+        status="pending",
+        scheduled="20260924T090000Z",
+        depends=("bbbbbbbb-1111-2222-3333-444444444444",),
+    )
+    second = Task(
+        uuid="bbbbbbbb-1111-2222-3333-444444444444",
+        description="Second",
+        status="pending",
+        due="20260924T120000Z",
+        depends=(first.uuid,),
+    )
+
+    summary = TaskwarriorApp._constraints_summary([first, second])
+
+    assert "aaaaaaaa | 2026-09-24 09:00 | - | - | cycle | First" in summary
+    assert "bbbbbbbb | - | 2026-09-24 12:00 | - | cycle | Second" in summary
+
+
+async def test_constraints_key_opens_local_screen_without_refetch() -> None:
+    task = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Constrained",
+        status="pending",
+        scheduled="20260924T090000Z",
+        due="20260924T120000Z",
+        estimate_hours=1.0,
+    )
+    client = FakeUiClient(tasks=[task])
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial_view_calls = client.calls.count(("view", "pending"))
+
+        await pilot.press("shift+k")
+        await pilot.pause()
+
+        assert isinstance(app.screen, ConstraintsScreen)
+        body = str(app.screen.query_one("#constraints-body").render())
+        assert "Constraints: 1 | Scheduled: 1 | Due: 1" in body
+        assert "on time" in body
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, ConstraintsScreen)
 
 
 def test_project_overview_groups_current_view_deterministically() -> None:
