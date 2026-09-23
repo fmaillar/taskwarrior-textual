@@ -47,16 +47,13 @@ y       sync
 q       quit
 ```
 
-## Installation for development
+## Development
 
 ```sh
 git clone https://github.com/fmaillar/taskwarrior-textual.git
 cd taskwarrior-textual
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -e '.[dev]'
-pytest
-taskwarrior-textual
+make install
+make check
 ```
 
 If the desired Taskwarrior binary is not the first `task` in `PATH`:
@@ -64,6 +61,30 @@ If the desired Taskwarrior binary is not the first `task` in `PATH`:
 ```sh
 TASKWARRIOR_COMMAND=/usr/local/bin/task taskwarrior-textual
 ```
+
+### Tests and coverage reports
+
+The project requires at least 95% branch-aware coverage. Generate reviewable reports with:
+
+```sh
+make report
+```
+
+This writes compact, Git-friendly artifacts to `reports/`:
+
+- `pytest.txt`: human-readable pytest and coverage output
+- `junit.xml`: machine-readable test results
+- `coverage.xml`: Cobertura coverage report
+- `coverage.json`: detailed coverage data
+- `pytest-exit-status.txt`: pytest exit status
+
+To generate, commit and push those reports in one command:
+
+```sh
+make push-reports
+```
+
+The local HTML report remains available via `make coverage` in `htmlcov/`, but is intentionally not committed.
 
 ## Roadmap
 
