@@ -413,6 +413,24 @@ def test_modify_planning_can_clear_all_fields() -> None:
     ]
 
 
+def test_modify_planning_without_estimate_uda_leaves_estimate_unmodified_when_empty() -> None:
+    client = RecordingClient()
+    client._udas_cache = frozenset()
+    client.modify_planning("12345678", due="2026-10-01")
+    assert client.calls == [
+        [
+            "12345678",
+            "modify",
+            "project:",
+            "priority:",
+            "due:2026-10-01",
+            "wait:",
+            "scheduled:",
+            "depends:",
+        ],
+    ]
+
+
 def test_modify_planning_requires_estimate_uda_for_nonempty_estimate() -> None:
     client = RecordingClient()
     client._udas_cache = frozenset()
