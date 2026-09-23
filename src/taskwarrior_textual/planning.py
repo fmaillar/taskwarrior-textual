@@ -120,7 +120,7 @@ def build_planning_graph(tasks: list[Task]) -> PlanningGraph:
                 for uuid in remaining
                 if not (dependency_sets[uuid] & remaining)
             ),
-            key=lambda uuid: by_uuid[uuid].short_uuid,
+            key=lambda uuid: (by_uuid[uuid].short_uuid, uuid),
         )
         if not ready:
             break
@@ -139,7 +139,7 @@ def build_planning_graph(tasks: list[Task]) -> PlanningGraph:
         },
         order=tuple(order),
         remaining=tuple(
-            sorted(remaining, key=lambda uuid: by_uuid[uuid].short_uuid)
+            sorted(remaining, key=lambda uuid: (by_uuid[uuid].short_uuid, uuid))
         ),
         cycle_nodes=frozenset(cycle_nodes),
         blocked_by_cycle=frozenset(remaining - cycle_nodes),
