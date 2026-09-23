@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, time, timedelta
 from typing import ClassVar
 
@@ -1839,6 +1840,27 @@ class TaskwarriorApp(App[None]):
                 resolved.append(uuid)
         return ",".join(resolved)
 
+    @staticmethod
+    def _validate_planning_dependency_update(
+        target: Task,
+        resolved_depends: str,
+        candidates: list[Task],
+    ) -> None:
+        """Reject dependency changes that introduce a cycle through target."""
+        depends = tuple(
+            part.strip()
+            for part in resolved_depends.split(",")
+            if part.strip()
+        )
+        replacement = replace(target, depends=depends)
+        hypothetical = [
+            replacement if task.uuid == target.uuid else task
+            for task in candidates
+        ]
+        graph = build_planning_graph(hypothetical)
+        if target.uuid in graph.cycle_nodes:
+            raise TaskwarriorError("dependency cycle would include the edited task")
+
     def _show_error(self, exc: Exception) -> None:
         self.query_one("#details", Static).update(
             f"[bold red]Taskwarrior error[/bold red]\n\n{exc}"
@@ -2201,6 +2223,11 @@ class TaskwarriorApp(App[None]):
                 resolved_depends = self._resolve_planning_dependencies(
                     values["depends"],
                     task,
+                    candidates,
+                )
+                self._validate_planning_dependency_update(
+                    task,
+                    resolved_depends,
                     candidates,
                 )
                 self.client.modify_planning(
