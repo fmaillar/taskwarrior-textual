@@ -299,6 +299,7 @@ def test_build_absolute_schedule_applies_dependencies_scheduled_and_due() -> Non
     assert schedule.due_slack[first.uuid] == 13.0
     assert schedule.due_slack[delayed.uuid] == -2.0
     assert schedule.invalid_due == ()
+    assert schedule.invalid_scheduled == ()
 
 
 def test_build_absolute_schedule_tracks_invalid_due_and_no_anchor() -> None:
@@ -325,11 +326,21 @@ def test_build_absolute_schedule_tracks_invalid_due_and_no_anchor() -> None:
         due="not-a-date",
         estimate_hours=1.0,
     )
+    invalid_start = Task(
+        uuid="dddddddd-1111-2222-3333-444444444444",
+        description="Invalid scheduled",
+        status="pending",
+        scheduled="tomorrow",
+        estimate_hours=1.0,
+    )
 
-    schedule = build_absolute_schedule(build_planning_graph([invalid, anchor]))
+    schedule = build_absolute_schedule(
+        build_planning_graph([invalid_start, invalid, anchor])
+    )
 
     assert schedule is not None
     assert schedule.invalid_due == ("cccccccc",)
+    assert schedule.invalid_scheduled == ("dddddddd",)
     assert schedule.late_by == {}
     assert schedule.due_slack == {}
 
