@@ -991,7 +991,10 @@ def test_constraints_summary_reports_scheduled_deadlines_and_lateness() -> None:
         due="20260925T000000Z",
     )
 
-    summary = TaskwarriorApp._constraints_summary([late, due_only, anchor])
+    summary = TaskwarriorApp._constraints_summary(
+        [late, due_only, anchor],
+        PlanningSettings(timezone="UTC"),
+    )
 
     assert "Constraints: 3 | Scheduled: 1 | Due: 2" in summary
     assert (
@@ -1029,7 +1032,8 @@ def test_constraints_summary_handles_invalid_values_and_no_anchor() -> None:
     )
 
     summary = TaskwarriorApp._constraints_summary(
-        [due_only, invalid_due, invalid_scheduled]
+        [due_only, invalid_due, invalid_scheduled],
+        PlanningSettings(timezone="UTC"),
     )
 
     assert "Constraints: 3 | Scheduled: 1 | Due: 2" in summary
@@ -1065,7 +1069,10 @@ def test_constraints_summary_reports_cycles_and_empty_constraints() -> None:
         depends=(first.uuid,),
     )
 
-    summary = TaskwarriorApp._constraints_summary([first, second])
+    summary = TaskwarriorApp._constraints_summary(
+        [first, second],
+        PlanningSettings(timezone="UTC"),
+    )
 
     assert "aaaaaaaa | 2026-09-24 09:00 | - | - | cycle | First" in summary
     assert "bbbbbbbb | - | 2026-09-24 12:00 | - | cycle | Second" in summary
@@ -1081,7 +1088,10 @@ async def test_constraints_key_opens_local_screen_without_refetch() -> None:
         estimate_hours=1.0,
     )
     client = FakeUiClient(tasks=[task])
-    app = TaskwarriorApp(client=client)
+    app = TaskwarriorApp(
+        client=client,
+        planning_settings=PlanningSettings(timezone="UTC"),
+    )
 
     async with app.run_test() as pilot:
         await pilot.pause()
