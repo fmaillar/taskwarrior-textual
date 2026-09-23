@@ -130,9 +130,6 @@ def load_planning_settings(path: Path | None = None) -> PlanningSettings:
         payload: Any = tomllib.loads(config_path.read_text())
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ConfigError(f"invalid TOML configuration: {config_path}: {exc}") from exc
-    if not isinstance(payload, dict):
-        raise ConfigError("configuration root must be a TOML table")
-
     planning = payload.get("planning", {})
     if not isinstance(planning, dict):
         raise ConfigError("planning must be a TOML table")
