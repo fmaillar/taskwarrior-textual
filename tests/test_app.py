@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from textual.widgets import Button, Input
 
 from taskwarrior_textual import app as app_module
