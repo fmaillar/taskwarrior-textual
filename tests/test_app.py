@@ -9,6 +9,7 @@ from taskwarrior_textual.app import (
     ProjectFilterForm,
     ProjectOverviewScreen,
     SearchForm,
+    TagFilterForm,
     TaskForm,
     TaskwarriorApp,
 )
@@ -895,6 +896,132 @@ async def test_local_filters_combine_and_status_describes_state() -> None:
         assert "project=infra" in details
         assert "blocked" in details
         assert "sort=urgency" in details
+
+
+def test_tag_filter_is_exact_and_case_insensitive() -> None:
+    assert TaskwarriorApp._matches_tag(SEARCH_TASKS[1], "mail") is True
+    assert TaskwarriorApp._matches_tag(SEARCH_TASKS[1], "MAIL") is True
+    assert TaskwarriorApp._matches_tag(SEARCH_TASKS[1], "mai") is False
+    assert TaskwarriorApp._matches_tag(SEARCH_TASKS[2], "") is True
+
+
+async def test_tag_filter_form_applies_and_clears_locally() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial_view_calls = client.calls.count(("view", "pending"))
+
+        await pilot.press("f")
+        await pilot.pause()
+        assert isinstance(app.screen, TagFilterForm)
+        tag = app.screen.query_one("#tag-filter", Input)
+        tag.value = "mail"
+        app.screen.on_input_submitted(Input.Submitted(tag, tag.value))
+        await pilot.pause()
+
+        assert app.tag_filter == "mail"
+        assert app.query_one("#tasks").row_count == 1
+        assert app._selected_task() == SEARCH_TASKS[1]
+
+        await pilot.press("f")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert app.tag_filter == ""
+        assert app.query_one("#tasks").row_count == 3
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+
+
+async def test_active_filter_toggles_locally_without_refetch() -> None:
+    active = Task(
+        uuid="dddddddd-1111-2222-3333-444444444444",
+        description="Active work",
+        status="pending",
+        project="Infra",
+        start="20260923T070000Z",
+        tags=("work",),
+    )
+    client = FakeUiClient(tasks=[*SEARCH_TASKS, active])
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial_view_calls = client.calls.count(("view", "pending"))
+
+        await pilot.press("v")
+        await pilot.pause()
+        assert app.active_only is True
+        assert app.query_one("#tasks").row_count == 1
+        assert app._selected_task() == active
+
+        await pilot.press("v")
+        await pilot.pause()
+        assert app.active_only is False
+        assert app.query_one("#tasks").row_count == 4
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+
+
+async def test_clear_local_state_resets_all_filters_and_sort_without_refetch() -> None:
+    active = Task(
+        uuid="dddddddd-1111-2222-3333-444444444444",
+        description="Active mail",
+        status="pending",
+        project="Infra",
+        start="20260923T070000Z",
+        urgency=7.0,
+        tags=("mail",),
+        depends=("aaaaaaaa-1111-2222-3333-444444444444",),
+    )
+    client = FakeUiClient(tasks=[*SEARCH_TASKS, active])
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial_view_calls = client.calls.count(("view", "pending"))
+        app._apply_search("mail")
+        app._apply_project_filter("infra")
+        app._apply_tag_filter("mail")
+        app.action_toggle_blocked()
+        app.action_toggle_active()
+        app.action_cycle_sort()
+
+        assert app.query_one("#tasks").row_count == 1
+
+        await pilot.press("c")
+        await pilot.pause()
+
+        assert app.search_query == ""
+        assert app.project_filter == ""
+        assert app.tag_filter == ""
+        assert app.blocked_only is False
+        assert app.active_only is False
+        assert app.sort_key is None
+        assert app.query_one("#tasks").row_count == 4
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+
+
+async def test_status_describes_tag_and_active_filters() -> None:
+    active = Task(
+        uuid="dddddddd-1111-2222-3333-444444444444",
+        description="Active mail",
+        status="pending",
+        project="Infra",
+        start="20260923T070000Z",
+        tags=("mail",),
+    )
+    app = TaskwarriorApp(client=FakeUiClient(tasks=[active]))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._apply_tag_filter("mail")
+        app.action_toggle_active()
+
+        details = str(app.query_one("#details").render())
+        assert "tag=mail" in details
+        assert "active" in details
 
 
 async def test_view_change_refetches_then_reapplies_search_and_sort() -> None:
