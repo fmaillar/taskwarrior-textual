@@ -7,7 +7,7 @@ import os
 import shlex
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Sequence
 
 from .models import Task
@@ -31,6 +31,7 @@ class TaskwarriorClient:
     """Thin adapter around the public Taskwarrior CLI."""
 
     command: str | None = None
+    _udas_cache: frozenset[str] | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.command is None:
@@ -82,6 +83,16 @@ class TaskwarriorClient:
         """Return Taskwarrior's human-readable task information."""
         return self._run([uuid_prefix])
 
+    def udas(self) -> frozenset[str]:
+        """Return configured Taskwarrior UDA names."""
+        if self._udas_cache is None:
+            self._udas_cache = frozenset(self._run(["_udas"]).split())
+        return self._udas_cache
+
+    def has_uda(self, name: str) -> bool:
+        """Return whether a named UDA is configured."""
+        return name in self.udas()
+
     @staticmethod
     def _parse_list(value: str) -> tuple[str, ...]:
         """Parse a comma-separated field, trimming and deduplicating entries."""
@@ -99,6 +110,7 @@ class TaskwarriorClient:
         depends: str = "",
         estimate: str = "",
         include_empty: bool = False,
+        include_estimate: bool = True,
     ) -> list[str]:
         values = {
             "project": project,
@@ -107,8 +119,9 @@ class TaskwarriorClient:
             "wait": wait,
             "scheduled": scheduled,
             "depends": ",".join(cls._parse_list(depends)),
-            "estimate": estimate,
         }
+        if include_estimate:
+            values["estimate"] = estimate
         return [
             f"{name}:{value}"
             for name, value in values.items()
@@ -128,6 +141,13 @@ class TaskwarriorClient:
         added = [f"+{tag}" for tag in desired if tag not in previous]
         return [*removed, *added]
 
+    def _require_estimate_uda(self) -> None:
+        if not self.has_uda("estimate"):
+            raise TaskwarriorError(
+                "The estimate UDA is not configured in Taskwarrior. "
+                "Define uda.estimate before editing estimates."
+            )
+
     def add(
         self,
         description: str,
@@ -142,6 +162,9 @@ class TaskwarriorClient:
         estimate: str = "",
     ) -> str:
         """Create a task and return Taskwarrior's response."""
+        include_estimate = bool(estimate)
+        if include_estimate:
+            self._require_estimate_uda()
         return self._run(
             [
                 "add",
@@ -154,6 +177,7 @@ class TaskwarriorClient:
                     scheduled=scheduled,
                     depends=depends,
                     estimate=estimate,
+                    include_estimate=include_estimate,
                 ),
                 *self._tag_modifications(tags),
             ]
@@ -175,6 +199,9 @@ class TaskwarriorClient:
         estimate: str = "",
     ) -> str:
         """Replace the editable fields of a task."""
+        include_estimate = self.has_uda("estimate")
+        if estimate and not include_estimate:
+            self._require_estimate_uda()
         return self._run(
             [
                 uuid_prefix,
@@ -189,6 +216,7 @@ class TaskwarriorClient:
                     depends=depends,
                     estimate=estimate,
                     include_empty=True,
+                    include_estimate=include_estimate,
                 ),
                 *self._tag_modifications(tags, previous_tags),
             ]
