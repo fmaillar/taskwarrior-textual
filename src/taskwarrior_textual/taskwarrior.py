@@ -69,6 +69,53 @@ class TaskwarriorClient:
             raise TaskwarriorError("Taskwarrior export did not return a JSON array")
         return [Task.from_export(item) for item in payload]
 
+    def expand_dependencies(self, tasks: list[Task], depth: int) -> list[Task]:
+        """Return tasks plus recursively fetched dependencies up to depth.
+
+        depth=0 keeps the supplied tasks unchanged; depth=-1 expands without
+        a depth limit. Missing dependencies remain unresolved.
+        """
+        if depth < -1:
+            raise ValueError("dependency depth must be -1 (unlimited) or >= 0")
+        if depth == 0:
+            return list(tasks)
+
+        expanded = {task.uuid: task for task in tasks}
+        frontier = sorted(
+            {
+                dependency
+                for task in tasks
+                for dependency in task.depends
+                if dependency not in expanded
+            }
+        )
+        level = 0
+
+        while frontier and (depth == -1 or level < depth):
+            next_frontier: set[str] = set()
+            for dependency in frontier:
+                if dependency in expanded:
+                    continue
+                matches = self.export(dependency)
+                fetched = next(
+                    (task for task in matches if task.uuid == dependency),
+                    None,
+                )
+                if fetched is None:
+                    continue
+                expanded[fetched.uuid] = fetched
+                next_frontier.update(
+                    nested
+                    for nested in fetched.depends
+                    if nested not in expanded
+                )
+            frontier = sorted(next_frontier)
+            level += 1
+
+        originals = [task.uuid for task in tasks]
+        added = sorted(uuid for uuid in expanded if uuid not in originals)
+        return [expanded[uuid] for uuid in originals + added]
+
     def view(self, name: str) -> list[Task]:
         """Return tasks from one of the supported named views."""
         try:
