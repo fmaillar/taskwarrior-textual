@@ -2022,7 +2022,43 @@ async def test_planning_form_submits_planning_values() -> None:
         form.on_button_pressed(Button.Pressed(form.query_one("#planning-save", Button)))
         await pilot.pause()
 
-        assert app.screen is app
+        assert not isinstance(app.screen, PlanningForm)
+
+
+async def test_planning_form_cancel_returns_none_and_handles_no_candidates() -> None:
+    target = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Target",
+        status="pending",
+    )
+    app = TaskwarriorApp(client=FakeUiClient(tasks=[target]))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(PlanningForm(target, [target]))
+        await pilot.pause()
+
+        assert isinstance(app.screen, PlanningForm)
+        assert "(none)" in app.screen.candidate_body
+        app.screen.on_button_pressed(
+            Button.Pressed(app.screen.query_one("#planning-cancel", Button))
+        )
+        await pilot.pause()
+
+        assert not isinstance(app.screen, PlanningForm)
+
+
+async def test_planning_editor_noops_without_selected_task() -> None:
+    client = FakeUiClient(tasks=[])
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+e")
+        await pilot.pause()
+
+        assert not isinstance(app.screen, PlanningForm)
+        assert not any(call[0] == "expand_dependencies" for call in client.calls)
 
 
 async def test_planning_editor_updates_only_planning_fields_and_refreshes() -> None:
