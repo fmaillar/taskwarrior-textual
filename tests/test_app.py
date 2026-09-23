@@ -19,13 +19,14 @@ from taskwarrior_textual.app import (
     ProjectOverviewScreen,
     SearchForm,
     TimewarriorReportScreen,
+    TimewarriorTrendScreen,
     TagFilterForm,
     TaskForm,
     TaskwarriorApp,
 )
 from taskwarrior_textual.config import PlanningSettings
 from taskwarrior_textual.models import Task
-from taskwarrior_textual.taskwarrior import TaskwarriorError
+from taskwarrior_textual.taskwarrior import TaskwarriorError, TimewarriorInterval
 
 TASK = Task(
     uuid="1b17dac7-81c8-4aa0-955b-658b1663cce3",
@@ -87,6 +88,7 @@ class FakeUiClient:
         self.tasks = [TASK] if tasks is None else tasks
         self.expanded_tasks: list[Task] | None = None
         self.tracked_hours: dict[str, float] = {}
+        self.tracked_intervals: tuple[TimewarriorInterval, ...] = ()
         self.add_values: list[dict[str, str]] = []
         self.modify_values: list[dict[str, object]] = []
 
@@ -113,6 +115,16 @@ class FakeUiClient:
         self._maybe_fail("timewarrior_hours")
         self.calls.append(("timewarrior_hours", len(tasks)))
         return dict(self.tracked_hours)
+
+    def timewarrior_intervals(
+        self,
+        tasks: list[Task],
+        *,
+        now=None,
+    ) -> tuple[TimewarriorInterval, ...]:
+        self._maybe_fail("timewarrior_intervals")
+        self.calls.append(("timewarrior_intervals", len(tasks)))
+        return tuple(self.tracked_intervals)
 
     def information(self, uuid_prefix: str) -> str:
         self._maybe_fail("information")
@@ -1422,6 +1434,128 @@ def test_gantt_distinguishes_milestone_from_missing_estimate() -> None:
     assert "11111111 | * | 0.00-0.00h | ◆ | Gate" in summary
     assert "22222222 | * | 0.00-0.00h | · | Unknown" in summary
     assert "Unestimated tasks shown as ·: 22222222" in summary
+
+
+def test_timewarrior_trend_splits_intervals_by_local_day_and_projects() -> None:
+    infra = Task(
+        uuid="51515151-1111-1111-1111-111111111111",
+        description="Infra",
+        status="pending",
+        project="Infra",
+    )
+    docs = Task(
+        uuid="61616161-1111-1111-1111-111111111111",
+        description="Docs",
+        status="pending",
+        project="Docs",
+    )
+    intervals = (
+        TimewarriorInterval(
+            task_uuid=infra.uuid,
+            start=datetime(2026, 9, 22, 21, 30, tzinfo=UTC),
+            end=datetime(2026, 9, 22, 22, 30, tzinfo=UTC),
+        ),
+        TimewarriorInterval(
+            task_uuid=docs.uuid,
+            start=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+            end=datetime(2026, 9, 23, 10, 0, tzinfo=UTC),
+        ),
+    )
+
+    summary = TaskwarriorApp._timewarrior_trend(
+        [infra, docs],
+        intervals,
+        PlanningSettings(timezone="Europe/Paris"),
+        now=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
+        days=7,
+    )
+
+    assert "Last 7 local days through 2026-09-23 (Europe/Paris)" in summary
+    assert "2026-09-22 | 0.50h" in summary
+    assert "2026-09-23 | 2.50h" in summary
+    assert summary.count("| 0.00h") >= 5
+    assert "Docs | 2.00h" in summary
+    assert "Infra | 1.00h" in summary
+    project_section = summary.split("Projects\n", 1)[1]
+    assert project_section.index("Docs | 2.00h") < project_section.index("Infra | 1.00h")
+
+
+def test_timewarrior_trend_clips_to_requested_window_and_handles_no_activity() -> None:
+    task = Task(
+        uuid="71717171-1111-1111-1111-111111111111",
+        description="Old",
+        status="pending",
+        project="Archive",
+    )
+    old = TimewarriorInterval(
+        task_uuid=task.uuid,
+        start=datetime(2026, 9, 15, 8, 0, tzinfo=UTC),
+        end=datetime(2026, 9, 15, 10, 0, tzinfo=UTC),
+    )
+
+    summary = TaskwarriorApp._timewarrior_trend(
+        [task],
+        (old,),
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
+        days=7,
+    )
+
+    assert "Tracked in window: 0.00h" in summary
+    assert "Archive |" not in summary.split("Projects\n", 1)[1]
+
+
+def test_timewarrior_trend_rejects_nonpositive_window() -> None:
+    with pytest.raises(ValueError, match="days"):
+        TaskwarriorApp._timewarrior_trend(
+            [],
+            (),
+            PlanningSettings(timezone="UTC"),
+            now=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
+            days=0,
+        )
+
+
+async def test_timewarrior_trend_key_opens_screen_without_task_refetch() -> None:
+    client = FakeUiClient(tasks=[TASK])
+    client.tracked_intervals = (
+        TimewarriorInterval(
+            task_uuid=TASK.uuid,
+            start=datetime(2026, 9, 23, 7, 0, tzinfo=UTC),
+            end=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+        ),
+    )
+    app = TaskwarriorApp(
+        client=client,
+        planning_settings=PlanningSettings(timezone="UTC"),
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial_view_calls = client.calls.count(("view", "pending"))
+
+        await pilot.press("shift+r")
+        await pilot.pause()
+
+        assert isinstance(app.screen, TimewarriorTrendScreen)
+        body = str(app.screen.query_one("#timewarrior-trend-body").render())
+        assert "Tracked in window: 1.00h" in body
+        assert ("timewarrior_intervals", 1) in client.calls
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+
+
+async def test_timewarrior_trend_does_not_open_when_timewarrior_fails() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    client.fail = "timewarrior_intervals"
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+r")
+        await pilot.pause()
+
+        assert not isinstance(app.screen, TimewarriorTrendScreen)
+        assert "timewarrior_intervals failed" in str(app.query_one("#details").render())
 
 
 def test_timewarrior_report_summarizes_tracked_remaining_and_progress() -> None:
