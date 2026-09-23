@@ -357,6 +357,10 @@ class TaskwarriorClient:
             ]
         )
 
+    def modify_scheduled(self, uuid_prefix: str, scheduled: str) -> str:
+        """Replace only the scheduled field of one task."""
+        return self._run([uuid_prefix, "modify", f"scheduled:{scheduled}"])
+
     def modify_planning(
         self,
         uuid_prefix: str,
