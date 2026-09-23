@@ -11,30 +11,6 @@ from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import DataTable, Footer, Header, Static
 
-
-class DetailsPane(VerticalScroll):
-    """Focusable, vertically scrollable task-detail pane."""
-
-    can_focus = True
-
-    BINDINGS = [
-        Binding("tab", "focus_tasks", "Tasks"),
-    ]
-
-    def action_focus_tasks(self) -> None:
-        self.app.query_one("#tasks", DataTable).focus()
-
-
-class TaskTable(DataTable):
-    """Task table with an explicit focus handoff to the detail pane."""
-
-    BINDINGS = [
-        Binding("tab", "focus_details", "Details"),
-    ]
-
-    def action_focus_details(self) -> None:
-        self.app.query_one("#details-pane", DetailsPane).focus()
-
 from .config import PlanningSettings, WorkingCalendar, load_planning_settings
 from .models import Task
 from .planning import build_planning_graph, remaining_estimate_hours
@@ -62,6 +38,30 @@ from .ui import (
     TimewarriorReportScreen,
     TimewarriorTrendScreen,
 )
+
+
+class DetailsPane(VerticalScroll):
+    """Focusable, vertically scrollable task-detail pane."""
+
+    can_focus = True
+
+    BINDINGS = [
+        Binding("tab", "focus_tasks", "Tasks"),
+    ]
+
+    def action_focus_tasks(self) -> None:
+        self.app.query_one("#tasks", DataTable).focus()
+
+
+class TaskTable(DataTable):
+    """Task table with an explicit focus handoff to the detail pane."""
+
+    BINDINGS = [
+        Binding("tab", "focus_details", "Details"),
+    ]
+
+    def action_focus_details(self) -> None:
+        self.app.query_one("#details-pane", DetailsPane).focus()
 
 
 class TaskwarriorApp(PlanningReportsMixin, App[None]):
