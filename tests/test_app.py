@@ -20,6 +20,7 @@ from taskwarrior_textual.app import (
     TaskForm,
     TaskwarriorApp,
 )
+from taskwarrior_textual.config import PlanningSettings
 from taskwarrior_textual.models import Task
 from taskwarrior_textual.taskwarrior import TaskwarriorError
 
@@ -551,7 +552,9 @@ def test_critical_path_summary_marks_milestones_and_deadline_pressure() -> None:
         estimate_defined=True,
     )
 
-    summary = TaskwarriorApp._critical_path_summary([milestone, start])
+    summary = TaskwarriorApp._critical_path_summary(
+        [milestone, start], PlanningSettings(timezone="UTC")
+    )
 
     assert "22222222 | 0.00h | 2.00 | 2.00 | 0.00 | yes | milestone" in summary
     assert "Deadline pressure" in summary
@@ -835,7 +838,9 @@ def test_calendar_plan_respects_dependencies_scheduled_constraints_and_due() -> 
         estimate_hours=1.0,
     )
 
-    summary = TaskwarriorApp._calendar_plan([delayed, normal, first])
+    summary = TaskwarriorApp._calendar_plan(
+        [delayed, normal, first], PlanningSettings(timezone="UTC")
+    )
 
     assert (
         "Calendar origin: 2026-09-24 09:00 UTC | "
@@ -879,7 +884,9 @@ def test_calendar_plan_reports_unestimated_unresolved_and_invalid_due() -> None:
         estimate_hours=1.0,
     )
 
-    summary = TaskwarriorApp._calendar_plan([invalid_start, second, first])
+    summary = TaskwarriorApp._calendar_plan(
+        [invalid_start, second, first], PlanningSettings(timezone="UTC")
+    )
 
     assert "Unestimated tasks treated as 0h: aaaaaaaa" in summary
     assert "Unresolved dependencies ignored: bbbbbbbb -> 99999999" in summary
@@ -896,7 +903,7 @@ def test_calendar_plan_requires_anchor_and_refuses_cycles() -> None:
         estimate_hours=1.0,
     )
     assert (
-        TaskwarriorApp._calendar_plan([no_anchor])
+        TaskwarriorApp._calendar_plan([no_anchor], PlanningSettings(timezone="UTC"))
         == "Calendar plan unavailable: no valid scheduled date in current view."
     )
     assert TaskwarriorApp._calendar_plan([]) == "No tasks in current view."
@@ -917,7 +924,7 @@ def test_calendar_plan_requires_anchor_and_refuses_cycles() -> None:
         estimate_hours=1.0,
     )
     assert (
-        TaskwarriorApp._calendar_plan([first, second])
+        TaskwarriorApp._calendar_plan([first, second], PlanningSettings(timezone="UTC"))
         == "Calendar plan unavailable: dependency cycle detected."
     )
 
@@ -938,7 +945,10 @@ async def test_calendar_plan_key_opens_local_screen_without_refetch() -> None:
         estimate_hours=3.0,
     )
     client = FakeUiClient(tasks=[second, first])
-    app = TaskwarriorApp(client=client)
+    app = TaskwarriorApp(
+        client=client,
+        planning_settings=PlanningSettings(timezone="UTC"),
+    )
 
     async with app.run_test() as pilot:
         await pilot.pause()
