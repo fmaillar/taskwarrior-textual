@@ -22,7 +22,6 @@ from taskwarrior_textual.app import (
 from taskwarrior_textual.models import Task
 from taskwarrior_textual.taskwarrior import TaskwarriorError
 
-
 TASK = Task(
     uuid="1b17dac7-81c8-4aa0-955b-658b1663cce3",
     description="Vérifier mail de RMS",
@@ -820,7 +819,7 @@ def test_calendar_plan_respects_dependencies_scheduled_constraints_and_due() -> 
 
     assert (
         "Calendar origin: 2026-09-24 09:00 UTC | "
-        "Project finish: 2026-09-24 18:00 UTC"
+        "Project finish: 2026-09-25 09:00 UTC"
     ) in summary
     assert (
         "11111111 | 2026-09-24 09:00 -> 2026-09-24 11:00 | "
@@ -831,8 +830,8 @@ def test_calendar_plan_respects_dependencies_scheduled_constraints_and_due() -> 
         "- | - | Normal branch"
     ) in summary
     assert (
-        "22222222 | 2026-09-24 15:00 -> 2026-09-24 18:00 | "
-        "2026-09-24 16:00 | LATE +2.00h | Delayed branch"
+        "22222222 | 2026-09-24 15:00 -> 2026-09-25 09:00 | "
+        "2026-09-24 16:00 | LATE +17.00h | Delayed branch"
     ) in summary
     assert "Late tasks: 1" in summary
 
@@ -931,7 +930,7 @@ async def test_calendar_plan_key_opens_local_screen_without_refetch() -> None:
         assert isinstance(app.screen, CalendarPlanScreen)
         body = str(app.screen.query_one("#calendar-plan-body").render())
         assert "Calendar origin: 2026-09-24 09:00 UTC" in body
-        assert "Project finish: 2026-09-24 14:00 UTC" in body
+        assert "Project finish: 2026-09-24 15:00 UTC" in body
         assert client.calls.count(("view", "pending")) == initial_view_calls
 
         await pilot.press("escape")

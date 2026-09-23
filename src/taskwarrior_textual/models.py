@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime
-import math
 from typing import Any
 
 
@@ -108,7 +108,7 @@ class Task:
         return bool(self.start and not self.end)
 
     @classmethod
-    def from_export(cls, value: dict[str, Any]) -> "Task":
+    def from_export(cls, value: dict[str, Any]) -> Task:
         """Build a task from one object returned by task export."""
         estimate_hours, estimate_defined = _estimate_from_export(value.get("estimate"))
         return cls(

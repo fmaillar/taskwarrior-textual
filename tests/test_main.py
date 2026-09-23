@@ -1,8 +1,8 @@
 import runpy
 import sys
 
-import taskwarrior_textual.app
 import taskwarrior_textual.__main__ as main_module
+import taskwarrior_textual.app
 
 
 def test_main_delegates_to_app_run(monkeypatch) -> None:

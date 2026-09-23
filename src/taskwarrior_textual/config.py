@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -75,7 +76,7 @@ class PlanningSettings:
             parsed.append((start, end))
 
         parsed.sort(key=lambda period: period[0])
-        for (_, previous_end), (next_start, _) in zip(parsed, parsed[1:]):
+        for (_, previous_end), (next_start, _) in itertools.pairwise(parsed):
             if next_start < previous_end:
                 raise ValueError("work periods must not overlap")
 

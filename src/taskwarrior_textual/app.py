@@ -1047,7 +1047,11 @@ class TaskwarriorApp(App[None]):
             "UUID | Start -> Finish | Due | Status | Description",
         ]
 
-        for uuid in sorted(order, key=lambda item: (starts[item], by_uuid[item].short_uuid)):
+        scheduled_order = [uuid for uuid in order if uuid in starts]
+        for uuid in sorted(
+            scheduled_order,
+            key=lambda item: (starts[item], by_uuid[item].short_uuid, item),
+        ):
             task = by_uuid[uuid]
             due = cls._planning_datetime(task.due)
             if due is None:

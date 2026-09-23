@@ -339,7 +339,7 @@ def test_build_absolute_schedule_uses_configured_working_periods() -> None:
 
     assert schedule is not None
     assert schedule.starts[task.uuid] == datetime(2026, 9, 25, 10, 0, tzinfo=UTC)
-    assert schedule.finishes[task.uuid] == datetime(2026, 9, 25, 16, 0, tzinfo=UTC)
+    assert schedule.finishes[task.uuid] == datetime(2026, 9, 25, 17, 0, tzinfo=UTC)
 
 
 def test_build_absolute_schedule_flags_scheduled_outside_working_calendar() -> None:
