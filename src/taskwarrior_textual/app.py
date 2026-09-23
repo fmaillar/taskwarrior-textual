@@ -202,8 +202,6 @@ class PlanningForm(ModalScreen[dict[str, str] | None]):
         if event.button.id == "planning-cancel":
             self.dismiss(None)
             return
-        if event.button.id != "planning-save":
-            return
         self.dismiss(
             {
                 "due": self.query_one("#planning-due", Input).value.strip(),
