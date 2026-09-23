@@ -909,15 +909,47 @@ class TaskwarriorApp(App[None]):
             "Critical path: "
             + " -> ".join(by_uuid[uuid].short_uuid for uuid in path),
             "",
-            "UUID | Estimate | ES | EF | Slack | Critical",
+            "UUID | Estimate | ES | EF | Slack | Critical | Kind",
         ]
         for uuid in sorted(order, key=lambda item: by_uuid[item].short_uuid):
             task = by_uuid[uuid]
             lines.append(
                 f"{task.short_uuid} | {task.display_estimate or '0.00h'} | "
                 f"{earliest_start[uuid]:.2f} | {earliest_finish[uuid]:.2f} | "
-                f"{slack[uuid]:.2f} | {'yes' if uuid in critical else 'no'}"
+                f"{slack[uuid]:.2f} | {'yes' if uuid in critical else 'no'} | "
+                f"{'milestone' if task.is_milestone else 'task'}"
             )
+
+        absolute = build_absolute_schedule(graph)
+        if absolute is not None:
+            deadline_rows = [
+                uuid
+                for uuid in order
+                if uuid in absolute.due_slack
+            ]
+            if deadline_rows:
+                lines.extend(
+                    [
+                        "",
+                        "Deadline pressure",
+                        (
+                            "UUID | Due | Planned finish | Deadline slack | "
+                            "CPM critical | Kind"
+                        ),
+                    ]
+                )
+                for uuid in sorted(
+                    deadline_rows,
+                    key=lambda item: by_uuid[item].short_uuid,
+                ):
+                    task = by_uuid[uuid]
+                    lines.append(
+                        f"{task.short_uuid} | {task.display_due} | "
+                        f"{absolute.finishes[uuid]:%Y-%m-%d %H:%M} | "
+                        f"{absolute.due_slack[uuid]:+.2f}h | "
+                        f"{'yes' if uuid in critical else 'no'} | "
+                        f"{'milestone' if task.is_milestone else 'task'}"
+                    )
 
         unestimated = sorted(
             task.short_uuid for task in tasks if not task.has_estimate
