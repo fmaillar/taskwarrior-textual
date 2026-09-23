@@ -85,6 +85,7 @@ class FakeUiClient:
         self.fail: str | None = None
         self.tasks = [TASK] if tasks is None else tasks
         self.expanded_tasks: list[Task] | None = None
+        self.tracked_hours: dict[str, float] = {}
         self.add_values: list[dict[str, str]] = []
         self.modify_values: list[dict[str, object]] = []
 
@@ -101,6 +102,16 @@ class FakeUiClient:
         self._maybe_fail("expand_dependencies")
         self.calls.append(("expand_dependencies", depth))
         return list(tasks) if self.expanded_tasks is None else self.expanded_tasks
+
+    def timewarrior_hours(
+        self,
+        tasks: list[Task],
+        *,
+        now=None,
+    ) -> dict[str, float]:
+        self._maybe_fail("timewarrior_hours")
+        self.calls.append(("timewarrior_hours", len(tasks)))
+        return dict(self.tracked_hours)
 
     def information(self, uuid_prefix: str) -> str:
         self._maybe_fail("information")
@@ -541,6 +552,45 @@ async def test_planning_actions_stop_when_dependency_expansion_fails(
 
         assert not isinstance(app.screen, screen_type)
         assert "expand_dependencies failed" in str(app.query_one("#details").render())
+
+
+async def test_critical_path_action_uses_timewarrior_tracked_hours() -> None:
+    active = Task(
+        uuid="abababab-1111-2222-3333-444444444444",
+        description="Tracked active",
+        status="pending",
+        start="20260923T080000Z",
+        estimate_hours=4.0,
+    )
+    client = FakeUiClient(tasks=[active])
+    client.tracked_hours = {active.uuid: 1.5}
+    app = TaskwarriorApp(
+        client=client,
+        planning_settings=PlanningSettings(timezone="UTC"),
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+c")
+        await pilot.pause()
+
+        body = str(app.screen.query_one("#critical-path-body").render())
+        assert "Project duration: 2.50h" in body
+        assert ("timewarrior_hours", 1) in client.calls
+
+
+async def test_timewarrior_failure_is_rendered_without_opening_planning_screen() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    client.fail = "timewarrior_hours"
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+c")
+        await pilot.pause()
+
+        assert not isinstance(app.screen, CriticalPathScreen)
+        assert "timewarrior_hours failed" in str(app.query_one("#details").render())
 
 
 def test_critical_path_summary_computes_schedule_and_slack() -> None:
