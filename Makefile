@@ -7,19 +7,21 @@ PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 RUFF := $(VENV)/bin/ruff
 COVERAGE := $(VENV)/bin/coverage
+PYTEST_JOBS ?= auto
 INSTALL_STAMP := $(VENV)/.taskwarrior-textual-installed
 
 REPORT_DIR := reports
 
-.PHONY: help venv install reinstall test coverage report lint check push-reports clean
+.PHONY: help venv install reinstall test test-serial coverage report lint check push-reports clean
 
 help:
 	@printf '%s\n' \
 	  'make venv          Create the virtual environment' \
 	  'make install       Install only when pyproject.toml changed' \
 	  'make reinstall     Force reinstall project + development dependencies' \
-	  'make test          Run pytest with the configured coverage gate' \
-	  'make coverage      Run tests and generate coverage reports' \
+	  'make test          Run pytest in parallel with the configured coverage gate' \
+	  'make test-serial   Run pytest sequentially for debugging' \
+	  'make coverage      Run parallel tests and generate coverage reports' \
 	  'make report        Generate compact reports and keep pytest exit status' \
 	  'make lint          Run Ruff' \
 	  'make check         Run strict lint + tests/coverage checks' \
@@ -40,11 +42,14 @@ reinstall: venv
 	$(MAKE) --no-print-directory install
 
 test: install
+	$(PYTEST) -n "$(PYTEST_JOBS)"
+
+test-serial: install
 	$(PYTEST)
 
 coverage: install
 	mkdir -p "$(REPORT_DIR)"
-	$(PYTEST) \
+	$(PYTEST) -n "$(PYTEST_JOBS)" \
 	  --junitxml="$(REPORT_DIR)/junit.xml" \
 	  --cov-report=term-missing \
 	  --cov-report=html \
@@ -54,7 +59,7 @@ coverage: install
 report: install
 	mkdir -p "$(REPORT_DIR)"
 	@set +e; \
-	$(PYTEST) \
+	$(PYTEST) -n "$(PYTEST_JOBS)" \
 	  --junitxml="$(REPORT_DIR)/junit.xml" \
 	  --cov-report=term-missing \
 	  --cov-report=xml:"$(REPORT_DIR)/coverage.xml" \
