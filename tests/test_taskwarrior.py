@@ -1,6 +1,8 @@
 import json
 
-from taskwarrior_textual.taskwarrior import TaskwarriorClient
+import pytest
+
+from taskwarrior_textual.taskwarrior import TaskwarriorClient, TaskwarriorError
 
 
 class FakeClient(TaskwarriorClient):
@@ -32,21 +34,32 @@ class RecordingClient(TaskwarriorClient):
 
 def test_pending_parses_export() -> None:
     tasks = FakeClient().pending()
-
     assert len(tasks) == 1
     assert tasks[0].short_uuid == "12345678"
     assert tasks[0].description == "Example"
 
 
+def test_export_rejects_invalid_json() -> None:
+    client = RecordingClient()
+    client._run = lambda args: "not-json"  # type: ignore[method-assign]
+    with pytest.raises(TaskwarriorError, match="invalid JSON"):
+        client.export()
+
+
+def test_export_rejects_non_array_json() -> None:
+    client = RecordingClient()
+    client._run = lambda args: "{}"  # type: ignore[method-assign]
+    with pytest.raises(TaskwarriorError, match="JSON array"):
+        client.export()
+
+
 def test_lifecycle_commands_use_uuid_prefix() -> None:
     client = RecordingClient()
-
     client.start("12345678")
     client.stop("12345678")
     client.done("12345678")
     client.delete("12345678")
     client.sync()
-
     assert client.calls == [
         ["12345678", "start"],
         ["12345678", "stop"],
@@ -56,9 +69,28 @@ def test_lifecycle_commands_use_uuid_prefix() -> None:
     ]
 
 
+def test_information_uses_uuid_prefix() -> None:
+    client = RecordingClient()
+    assert client.information("12345678") == "ok"
+    assert client.calls == [["12345678"]]
+
+
+def test_add_builds_attributes() -> None:
+    client = RecordingClient()
+    client.add("Example", project="P", priority="M", due="2026-09-25")
+    assert client.calls == [
+        ["add", "Example", "project:P", "priority:M", "due:2026-09-25"]
+    ]
+
+
+def test_add_omits_empty_attributes() -> None:
+    client = RecordingClient()
+    client.add("Example")
+    assert client.calls == [["add", "Example"]]
+
+
 def test_modify_replaces_editable_fields() -> None:
     client = RecordingClient()
-
     client.modify(
         "12345678",
         "Example task",
@@ -66,14 +98,83 @@ def test_modify_replaces_editable_fields() -> None:
         priority="H",
         due="2026-09-25",
     )
+    assert client.calls == [[
+        "12345678",
+        "modify",
+        "description:Example task",
+        "project:Project",
+        "priority:H",
+        "due:2026-09-25",
+    ]]
 
-    assert client.calls == [
-        [
-            "12345678",
-            "modify",
-            "description:Example task",
-            "project:Project",
-            "priority:H",
-            "due:2026-09-25",
-        ]
-    ]
+
+def test_modify_can_clear_optional_fields() -> None:
+    client = RecordingClient()
+    client.modify("12345678", "Example")
+    assert client.calls == [[
+        "12345678",
+        "modify",
+        "description:Example",
+        "project:",
+        "priority:",
+        "due:",
+    ]]
+
+
+def test_client_uses_environment_override(monkeypatch) -> None:
+    monkeypatch.setenv("TASKWARRIOR_COMMAND", "/custom/task")
+    client = TaskwarriorClient()
+    assert client.command == "/custom/task"
+
+
+def test_client_uses_path_when_no_override(monkeypatch) -> None:
+    monkeypatch.delenv("TASKWARRIOR_COMMAND", raising=False)
+    monkeypatch.setattr("taskwarrior_textual.taskwarrior.shutil.which", lambda name: "/bin/task")
+    client = TaskwarriorClient()
+    assert client.command == "/bin/task"
+
+
+def test_client_errors_when_task_is_missing(monkeypatch) -> None:
+    monkeypatch.delenv("TASKWARRIOR_COMMAND", raising=False)
+    monkeypatch.setattr("taskwarrior_textual.taskwarrior.shutil.which", lambda name: None)
+    with pytest.raises(TaskwarriorError, match="not found"):
+        TaskwarriorClient()
+
+
+def test_run_returns_stdout(monkeypatch) -> None:
+    class Result:
+        returncode = 0
+        stdout = "ok\n"
+        stderr = ""
+
+    monkeypatch.setattr(
+        "taskwarrior_textual.taskwarrior.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+    client = TaskwarriorClient(command="/bin/task")
+    assert client._run(["list"]) == "ok\n"
+
+
+def test_run_raises_on_nonzero_exit(monkeypatch) -> None:
+    class Result:
+        returncode = 2
+        stdout = ""
+        stderr = "boom"
+
+    monkeypatch.setattr(
+        "taskwarrior_textual.taskwarrior.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+    client = TaskwarriorClient(command="/bin/task")
+    with pytest.raises(TaskwarriorError, match="boom"):
+        client._run(["list"])
+
+
+def test_run_wraps_oserror(monkeypatch) -> None:
+    def explode(*args, **kwargs):
+        raise OSError("noexec")
+
+    monkeypatch.setattr("taskwarrior_textual.taskwarrior.subprocess.run", explode)
+    client = TaskwarriorClient(command="/bin/task")
+    with pytest.raises(TaskwarriorError, match="Cannot execute"):
+        client._run(["list"])
