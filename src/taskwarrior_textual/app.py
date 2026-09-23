@@ -72,6 +72,11 @@ class TaskForm(ModalScreen[dict[str, str] | None]):
                 placeholder="Depends: comma-separated UUIDs or prefixes",
                 id="depends",
             )
+            yield Input(
+                value=str(task.estimate_hours) if task and task.estimate_hours else "",
+                placeholder="Estimate (hours)",
+                id="estimate",
+            )
             with Horizontal(id="form-buttons"):
                 yield Button("Save", variant="primary", id="save")
                 yield Button("Cancel", id="cancel")
@@ -95,6 +100,7 @@ class TaskForm(ModalScreen[dict[str, str] | None]):
                     "wait": self.query_one("#wait", Input).value.strip(),
                     "scheduled": self.query_one("#scheduled", Input).value.strip(),
                     "depends": self.query_one("#depends", Input).value.strip(),
+                    "estimate": self.query_one("#estimate", Input).value.strip(),
                 }
             )
 
@@ -217,6 +223,37 @@ class ProjectFilterForm(ModalScreen[str]):
 
     def action_clear_filter(self) -> None:
         self.dismiss("")
+
+
+class GanttScreen(ModalScreen[None]):
+    """Read-only local Gantt-like planning view."""
+
+    BINDINGS = [("escape", "close", "Close")]
+
+    CSS = """
+    GanttScreen { align: center middle; }
+    #gantt-box {
+        width: 92%;
+        max-width: 130;
+        height: auto;
+        max-height: 90%;
+        padding: 1 2;
+        border: round $accent;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, body: str) -> None:
+        super().__init__()
+        self.body = body
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="gantt-box"):
+            yield Label("Gantt planning")
+            yield Static(self.body, id="gantt-body")
+
+    def action_close(self) -> None:
+        self.dismiss(None)
 
 
 class CriticalPathScreen(ModalScreen[None]):
@@ -404,6 +441,7 @@ class TaskwarriorApp(App[None]):
         ("g", "show_dependencies", "Dependencies"),
         ("shift+g", "show_dependency_overview", "Dependency graph"),
         ("shift+c", "show_critical_path", "Critical path"),
+        ("shift+h", "show_gantt", "Gantt"),
         ("shift+p", "show_project_overview", "Projects"),
         ("f", "filter_tag", "Tag"),
         ("v", "toggle_active", "Active"),
@@ -839,6 +877,87 @@ class TaskwarriorApp(App[None]):
         return "\n".join(lines)
 
     @staticmethod
+    def _gantt_summary(tasks: list[Task]) -> str:
+        """Render an earliest-start dependency schedule as a compact ASCII Gantt."""
+        if not tasks:
+            return "No tasks in current view."
+
+        by_uuid = {task.uuid: task for task in tasks}
+        dependencies: dict[str, set[str]] = {}
+        unresolved: list[tuple[str, str]] = []
+
+        for task in tasks:
+            resolved: set[str] = set()
+            for dependency in task.depends:
+                if dependency in by_uuid:
+                    resolved.add(dependency)
+                else:
+                    unresolved.append((task.short_uuid, dependency[:8]))
+            dependencies[task.uuid] = resolved
+
+        remaining = set(by_uuid)
+        order: list[str] = []
+        while remaining:
+            ready = sorted(
+                (
+                    uuid
+                    for uuid in remaining
+                    if not (dependencies[uuid] & remaining)
+                ),
+                key=lambda uuid: by_uuid[uuid].short_uuid,
+            )
+            if not ready:
+                return "Gantt unavailable: dependency cycle detected."
+            order.extend(ready)
+            remaining.difference_update(ready)
+
+        earliest_start: dict[str, float] = {}
+        earliest_finish: dict[str, float] = {}
+        for uuid in order:
+            start = max(
+                (earliest_finish[dependency] for dependency in dependencies[uuid]),
+                default=0.0,
+            )
+            earliest_start[uuid] = start
+            earliest_finish[uuid] = start + by_uuid[uuid].estimate_hours
+
+        project_duration = max(earliest_finish.values(), default=0.0)
+        lines = [f"Scale: 1 char = 1h | Project duration: {project_duration:.2f}h"]
+
+        for uuid in sorted(
+            order,
+            key=lambda item: (earliest_start[item], by_uuid[item].short_uuid),
+        ):
+            task = by_uuid[uuid]
+            offset = int(round(earliest_start[uuid]))
+            if task.estimate_hours == 0:
+                bar = " " * offset + "·"
+            else:
+                width = max(1, int(round(task.estimate_hours)))
+                bar = " " * offset + "█" * width
+            lines.append(
+                f"{task.short_uuid} | {earliest_start[uuid]:.2f}-"
+                f"{earliest_finish[uuid]:.2f}h | {bar} | {task.description}"
+            )
+
+        unestimated = sorted(
+            task.short_uuid for task in tasks if task.estimate_hours == 0
+        )
+        if unestimated:
+            lines.extend(
+                ["", "Unestimated tasks shown as ·: " + ", ".join(unestimated)]
+            )
+
+        if unresolved:
+            rendered = "; ".join(
+                f"{task_uuid} -> {dependency_uuid}"
+                for task_uuid, dependency_uuid in sorted(unresolved)
+            )
+            lines.extend(["", "Unresolved dependencies ignored: " + rendered])
+
+        return "\n".join(lines)
+
+    @staticmethod
     def _project_overview(tasks: list[Task]) -> str:
         """Summarize task counts and urgency by project for the current view."""
         if not tasks:
@@ -987,6 +1106,10 @@ class TaskwarriorApp(App[None]):
     def action_show_critical_path(self) -> None:
         """Show estimate-based critical-path analysis for the current view."""
         self.push_screen(CriticalPathScreen(self._critical_path_summary(self.view_tasks)))
+
+    def action_show_gantt(self) -> None:
+        """Show an estimate-based local Gantt view for the current view."""
+        self.push_screen(GanttScreen(self._gantt_summary(self.view_tasks)))
 
     def action_show_project_overview(self) -> None:
         """Show a local project summary for the currently loaded view."""
