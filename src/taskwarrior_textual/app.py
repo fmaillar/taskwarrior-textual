@@ -486,6 +486,37 @@ class ProjectOverviewScreen(ModalScreen[None]):
         self.dismiss(None)
 
 
+class TimewarriorReportScreen(ModalScreen[None]):
+    """Read-only tracked-effort report for the current view."""
+
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [("escape", "close", "Close")]
+
+    CSS = """
+    TimewarriorReportScreen { align: center middle; }
+    #timewarrior-report-box {
+        width: 94%;
+        max-width: 135;
+        height: auto;
+        max-height: 90%;
+        padding: 1 2;
+        border: round $accent;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, body: str) -> None:
+        super().__init__()
+        self.body = body
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="timewarrior-report-box"):
+            yield Label("Timewarrior effort report")
+            yield Static(self.body, id="timewarrior-report-body")
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 class ConfirmDelete(ModalScreen[bool]):
     """Confirm deletion of a task."""
 
@@ -551,6 +582,7 @@ class TaskwarriorApp(App[None]):
         ("shift+k", "show_constraints", "Constraints"),
         ("shift+m", "show_milestones", "Milestones"),
         ("shift+p", "show_project_overview", "Projects"),
+        ("shift+t", "show_timewarrior_report", "Timewarrior"),
         ("f", "filter_tag", "Tag"),
         ("v", "toggle_active", "Active"),
         ("c", "clear_local_state", "Clear"),
@@ -1281,6 +1313,82 @@ class TaskwarriorApp(App[None]):
         return "\n".join(lines)
 
     @staticmethod
+    def _timewarrior_report(
+        tasks: list[Task],
+        settings: PlanningSettings | None = None,
+        *,
+        now: datetime | None = None,
+        tracked_hours: dict[str, float] | None = None,
+    ) -> str:
+        """Summarize per-task tracked effort and remaining work."""
+        if not tasks:
+            return "No tasks in current view."
+
+        resolved_settings = settings or PlanningSettings()
+        resolved_now = now or datetime.now(UTC)
+        calendar = WorkingCalendar(resolved_settings)
+        tracked = tracked_hours or {}
+
+        total_estimate = sum(task.estimate_hours for task in tasks)
+        total_tracked = sum(tracked.get(task.uuid, 0.0) for task in tasks)
+        total_remaining = sum(
+            remaining_estimate_hours(
+                task,
+                calendar,
+                resolved_now,
+                tracked_hours,
+            )
+            for task in tasks
+        )
+
+        lines = [
+            (
+                f"Tracked total: {total_tracked:.2f}h | "
+                f"Estimated total: {total_estimate:.2f}h | "
+                f"Remaining total: {total_remaining:.2f}h"
+            ),
+            "",
+            "UUID | Project | Estimate | Tracked | Remaining | Progress | Description",
+        ]
+
+        ordered = sorted(
+            tasks,
+            key=lambda task: (
+                -tracked.get(task.uuid, 0.0),
+                task.project.casefold(),
+                task.short_uuid,
+                task.uuid,
+            ),
+        )
+        for task in ordered:
+            tracked_value = tracked.get(task.uuid, 0.0)
+            if not task.has_estimate:
+                estimate = "—"
+                remaining = "—"
+                progress = "—"
+            else:
+                estimate = f"{task.estimate_hours:.2f}h"
+                remaining_value = remaining_estimate_hours(
+                    task,
+                    calendar,
+                    resolved_now,
+                    tracked_hours,
+                )
+                remaining = f"{remaining_value:.2f}h"
+                if task.is_milestone:
+                    progress = "milestone"
+                else:
+                    progress = f"{tracked_value / task.estimate_hours * 100:.1f}%"
+
+            lines.append(
+                f"{task.short_uuid} | {task.project or '(none)'} | "
+                f"{estimate} | {tracked_value:.2f}h | {remaining} | "
+                f"{progress} | {task.description}"
+            )
+
+        return "\n".join(lines)
+
+    @staticmethod
     def _project_overview(
         tasks: list[Task],
         settings: PlanningSettings | None = None,
@@ -1588,6 +1696,23 @@ class TaskwarriorApp(App[None]):
     def action_show_milestones(self) -> None:
         """Show explicit zero-duration milestones for the current view."""
         self.push_screen(MilestonesScreen(self._milestones_summary(self.view_tasks)))
+
+    def action_show_timewarrior_report(self) -> None:
+        """Show tracked effort and remaining work for the current view."""
+        context = self._tracked_planning_context(self.view_tasks)
+        if context is None:
+            return
+        tracked_hours, now = context
+        self.push_screen(
+            TimewarriorReportScreen(
+                self._timewarrior_report(
+                    self.view_tasks,
+                    self.planning_settings,
+                    now=now,
+                    tracked_hours=tracked_hours,
+                )
+            )
+        )
 
     def action_show_project_overview(self) -> None:
         """Show project totals including tracked and remaining work."""
