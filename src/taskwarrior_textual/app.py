@@ -196,6 +196,10 @@ class TaskwarriorApp(App[None]):
             )
         details.update(f"{len(tasks)} pending task(s).")
 
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Inspect the row activated with Enter in the task table."""
+        self.action_inspect_task()
+
     def action_inspect_task(self) -> None:
         """Show Taskwarrior information for the selected row."""
         task = self._selected_task()
