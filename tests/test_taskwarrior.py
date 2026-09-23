@@ -270,3 +270,103 @@ def test_tag_delta_does_not_touch_unchanged_tags() -> None:
     assert TaskwarriorClient._tag_modifications(
         "mail,rms", ("mail", "rms")
     ) == []
+
+
+
+class UdaRecordingClient(RecordingClient):
+    def __init__(self, udas: str) -> None:
+        super().__init__()
+        self.udas_output = udas
+
+    def _run(self, args):  # type: ignore[override]
+        self.calls.append(list(args))
+        if list(args) == ["_udas"]:
+            return self.udas_output
+        return "ok"
+
+
+def test_udas_parses_helper_output() -> None:
+    client = UdaRecordingClient("estimate\nfoo.bar\n")
+
+    assert client.udas() == frozenset({"estimate", "foo.bar"})
+    assert client.calls == [["_udas"]]
+
+
+def test_add_estimate_requires_configured_uda() -> None:
+    client = UdaRecordingClient("other\n")
+
+    with pytest.raises(TaskwarriorError, match="estimate UDA"):
+        client.add("Example", estimate="2.5")
+
+    assert client.calls == [["_udas"]]
+
+
+def test_add_estimate_uses_configured_uda() -> None:
+    client = UdaRecordingClient("estimate\n")
+
+    client.add("Example", estimate="0")
+
+    assert client.calls == [
+        ["_udas"],
+        ["add", "Example", "estimate:0"],
+    ]
+
+
+def test_modify_without_estimate_uda_does_not_touch_estimate() -> None:
+    client = UdaRecordingClient("other\n")
+
+    client.modify("12345678", "Example")
+
+    assert client.calls == [
+        ["_udas"],
+        [
+            "12345678",
+            "modify",
+            "description:Example",
+            "project:",
+            "priority:",
+            "due:",
+            "wait:",
+            "scheduled:",
+            "depends:",
+        ],
+    ]
+
+
+def test_modify_with_estimate_uda_can_clear_estimate() -> None:
+    client = UdaRecordingClient("estimate\n")
+
+    client.modify("12345678", "Example", estimate="")
+
+    assert client.calls == [
+        ["_udas"],
+        [
+            "12345678",
+            "modify",
+            "description:Example",
+            "project:",
+            "priority:",
+            "due:",
+            "wait:",
+            "scheduled:",
+            "depends:",
+            "estimate:",
+        ],
+    ]
+
+
+def test_modify_nonempty_estimate_requires_configured_uda() -> None:
+    client = UdaRecordingClient("")
+
+    with pytest.raises(TaskwarriorError, match="estimate UDA"):
+        client.modify("12345678", "Example", estimate="1.5")
+
+    assert client.calls == [["_udas"]]
+
+
+def test_udas_result_is_cached() -> None:
+    client = UdaRecordingClient("estimate\n")
+
+    assert client.has_uda("estimate") is True
+    assert client.has_uda("estimate") is True
+    assert client.calls == [["_udas"]]
