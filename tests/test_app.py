@@ -16,6 +16,7 @@ from taskwarrior_textual.app import (
     GanttScreen,
     MilestonesScreen,
     PlanningForm,
+    ProjectDashboardScreen,
     ProjectFilterForm,
     ProjectOverviewScreen,
     SearchForm,
