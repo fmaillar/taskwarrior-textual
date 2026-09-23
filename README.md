@@ -113,6 +113,32 @@ the dependency candidates available from the expanded planning graph, resolves p
 to full UUIDs, and rejects self-dependencies, unknown or ambiguous prefixes, and edits
 that would introduce a dependency cycle.
 
+## Persistent planning configuration
+
+Planning defaults can be overridden in:
+
+```text
+~/.config/taskwarrior-textual/config.toml
+```
+
+or, when set, under `$XDG_CONFIG_HOME/taskwarrior-textual/config.toml`.
+`TASKWARRIOR_TEXTUAL_CONFIG` can point at an explicit file.
+
+Example:
+
+```toml
+[planning]
+timezone = "Europe/Paris"
+workdays = [0, 1, 2, 3, 4]
+work_periods = [["08:00", "12:00"], ["13:00", "17:00"]]
+holidays = ["2026-12-25"]
+dependency_depth = 10
+capacity = 2
+```
+
+Omitted keys keep the built-in defaults. Invalid values and unknown `[planning]`
+keys are rejected at startup instead of being silently ignored.
+
 ## Roadmap
 
 Next: persistent user configuration, consolidated project dashboards, richer planning
