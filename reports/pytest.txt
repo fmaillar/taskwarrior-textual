@@ -7,86 +7,23 @@ plugins: asyncio-1.4.0, cov-7.1.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
 collected 45 items
 
-tests/test_app.py .............FF....F....                               [ 53%]
+tests/test_app.py ........................                               [ 53%]
 tests/test_main.py ..                                                    [ 57%]
 tests/test_models.py ....                                                [ 66%]
 tests/test_taskwarrior.py ...............                                [100%]
 
-=================================== FAILURES ===================================
-_____________________________ test_inspect_success _____________________________
-
-    async def test_inspect_success() -> None:
-        client = FakeUiClient()
-        app = TaskwarriorApp(client=client)
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            await pilot.press("enter")
-            await pilot.pause()
->           assert ("information", TASK.short_uuid) in client.calls
-E           AssertionError: assert ('information', '1b17dac7') in []
-E            +  where [] = <test_app.FakeUiClient object at 0x7f34411b8320>.calls
-
-tests/test_app.py:236: AssertionError
-________________________ test_inspect_error_is_rendered ________________________
-
-    async def test_inspect_error_is_rendered() -> None:
-        client = FakeUiClient()
-        client.fail = "information"
-        app = TaskwarriorApp(client=client)
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            await pilot.press("enter")
-            await pilot.pause()
->           assert "information failed" in str(app.query_one("#details").render())
-E           AssertionError: assert 'information failed' in '1 pending task(s).'
-E            +  where '1 pending task(s).' = str(Content('1 pending task(s).'))
-E            +    where Content('1 pending task(s).') = render()
-E            +      where render = Static(id='details').render
-E            +        where Static(id='details') = query_one('#details')
-E            +          where query_one = TaskwarriorApp(title='Taskwarrior Textual', classes={'-dark-mode'}, pseudo_classes={'focus', 'dark'}).query_one
-
-tests/test_app.py:248: AssertionError
-_______________ test_lifecycle_keys_call_client_with_short_uuid ________________
-
-    async def test_lifecycle_keys_call_client_with_short_uuid() -> None:
-        client = FakeUiClient()
-        app = TaskwarriorApp(client=client)
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            await pilot.press("s")
-            await pilot.press("x")
-            await pilot.press("enter")
-            await pilot.press("y")
-            await pilot.press("d")
-            await pilot.pause()
-        assert ("start", TASK.short_uuid) in client.calls
-        assert ("stop", TASK.short_uuid) in client.calls
->       assert ("information", TASK.short_uuid) in client.calls
-E       AssertionError: assert ('information', '1b17dac7') in [('start', '1b17dac7'), ('stop', '1b17dac7'), ('sync', ''), ('done', '1b17dac7')]
-E        +  where [('start', '1b17dac7'), ('stop', '1b17dac7'), ('sync', ''), ('done', '1b17dac7')] = <test_app.FakeUiClient object at 0x7f3441d9ad00>.calls
-
-tests/test_app.py:314: AssertionError
-=============================== warnings summary ===============================
-tests/test_main.py::test_module_execution_calls_run
-  <frozen runpy>:128: RuntimeWarning: 'taskwarrior_textual.__main__' found in sys.modules after import of package 'taskwarrior_textual', but prior to execution of 'taskwarrior_textual.__main__'; this may result in unpredictable behaviour
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
 - generated xml file: /home/fgm/projets/taskwarrior-textual/reports/junit.xml --
 ================================ tests coverage ================================
 _______________ coverage: platform linux, python 3.13.5-final-0 ________________
 
 Name                             Stmts   Miss Branch BrPart  Cover   Missing
 ----------------------------------------------------------------------------
-src/taskwarrior_textual/app.py     164      9     24      0    94%   201-209
+src/taskwarrior_textual/app.py     166      1     24      1    99%   207
 ----------------------------------------------------------------------------
-TOTAL                              261      9     38      0    96%
+TOTAL                              263      1     38      1    99%
 
 4 files skipped due to complete coverage.
 Coverage HTML written to dir htmlcov
 Coverage XML written to file reports/coverage.xml
-Required test coverage of 95.0% reached. Total coverage: 96.32%
-=========================== short test summary info ============================
-FAILED tests/test_app.py::test_inspect_success - AssertionError: assert ('inf...
-FAILED tests/test_app.py::test_inspect_error_is_rendered - AssertionError: as...
-FAILED tests/test_app.py::test_lifecycle_keys_call_client_with_short_uuid - A...
-=================== 3 failed, 42 passed, 1 warning in 13.82s ===================
+Required test coverage of 95.0% reached. Total coverage: 99.34%
+============================= 45 passed in 13.82s ==============================
