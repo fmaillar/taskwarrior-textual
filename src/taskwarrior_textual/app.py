@@ -52,6 +52,26 @@ class TaskForm(ModalScreen[dict[str, str] | None]):
                 placeholder="Due: YYYY-MM-DD, tomorrow, ...",
                 id="due",
             )
+            yield Input(
+                value=",".join(task.tags) if task else "",
+                placeholder="Tags: comma-separated",
+                id="tags",
+            )
+            yield Input(
+                value=task.display_wait if task else "",
+                placeholder="Wait: YYYY-MM-DD HH:MM, tomorrow, ...",
+                id="wait",
+            )
+            yield Input(
+                value=task.display_scheduled if task else "",
+                placeholder="Scheduled: YYYY-MM-DD HH:MM, tomorrow, ...",
+                id="scheduled",
+            )
+            yield Input(
+                value=",".join(task.depends) if task else "",
+                placeholder="Depends: comma-separated UUIDs or prefixes",
+                id="depends",
+            )
             with Horizontal(id="form-buttons"):
                 yield Button("Save", variant="primary", id="save")
                 yield Button("Cancel", id="cancel")
@@ -71,6 +91,10 @@ class TaskForm(ModalScreen[dict[str, str] | None]):
                     "project": self.query_one("#project", Input).value.strip(),
                     "priority": self.query_one("#priority", Input).value.strip().upper(),
                     "due": self.query_one("#due", Input).value.strip(),
+                    "tags": self.query_one("#tags", Input).value.strip(),
+                    "wait": self.query_one("#wait", Input).value.strip(),
+                    "scheduled": self.query_one("#scheduled", Input).value.strip(),
+                    "depends": self.query_one("#depends", Input).value.strip(),
                 }
             )
 
@@ -284,7 +308,11 @@ class TaskwarriorApp(App[None]):
             if values is None:
                 return
             try:
-                self.client.modify(task.short_uuid, **values)
+                self.client.modify(
+                    task.short_uuid,
+                    **values,
+                    previous_tags=task.tags,
+                )
             except TaskwarriorError as exc:
                 self._show_error(exc)
                 return
