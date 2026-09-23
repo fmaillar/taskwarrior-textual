@@ -24,6 +24,19 @@ class PlanningGraph:
         return bool(self.remaining)
 
 
+@dataclass(frozen=True, slots=True)
+class RelativeSchedule:
+    """CPM-style relative schedule over an acyclic planning graph."""
+
+    graph: PlanningGraph
+    earliest_start: dict[str, float]
+    earliest_finish: dict[str, float]
+    latest_start: dict[str, float]
+    slack: dict[str, float]
+    critical: frozenset[str]
+    duration: float
+
+
 def build_planning_graph(tasks: list[Task]) -> PlanningGraph:
     """Resolve in-view dependencies and compute a deterministic topological order."""
     by_uuid = {task.uuid: task for task in tasks}
@@ -70,4 +83,54 @@ def build_planning_graph(tasks: list[Task]) -> PlanningGraph:
             sorted(remaining, key=lambda uuid: by_uuid[uuid].short_uuid)
         ),
         unresolved=tuple(sorted(unresolved)),
+    )
+
+
+
+def build_relative_schedule(graph: PlanningGraph) -> RelativeSchedule | None:
+    """Compute earliest/latest timing and slack for an acyclic graph."""
+    if graph.cyclic:
+        return None
+
+    earliest_start: dict[str, float] = {}
+    earliest_finish: dict[str, float] = {}
+    for uuid in graph.order:
+        start = max(
+            (
+                earliest_finish[dependency]
+                for dependency in graph.dependencies[uuid]
+            ),
+            default=0.0,
+        )
+        earliest_start[uuid] = start
+        earliest_finish[uuid] = start + graph.by_uuid[uuid].estimate_hours
+
+    duration = max(earliest_finish.values(), default=0.0)
+    latest_start: dict[str, float] = {}
+    for uuid in reversed(graph.order):
+        if graph.successors[uuid]:
+            finish = min(
+                latest_start[successor]
+                for successor in graph.successors[uuid]
+            )
+        else:
+            finish = duration
+        latest_start[uuid] = finish - graph.by_uuid[uuid].estimate_hours
+
+    slack = {
+        uuid: latest_start[uuid] - earliest_start[uuid]
+        for uuid in graph.order
+    }
+    critical = frozenset(
+        uuid for uuid in graph.order if abs(slack[uuid]) < 1e-9
+    )
+
+    return RelativeSchedule(
+        graph=graph,
+        earliest_start=earliest_start,
+        earliest_finish=earliest_finish,
+        latest_start=latest_start,
+        slack=slack,
+        critical=critical,
+        duration=duration,
     )
