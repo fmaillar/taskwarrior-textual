@@ -2361,6 +2361,28 @@ def test_project_dashboard_reports_cycles_unresolved_and_unestimated_work() -> N
     assert "Unresolved dependencies: 41414141 -> 99999999" in summary
 
 
+def test_project_dashboard_handles_defaults_active_state_and_missing_anchor() -> None:
+    task = Task(
+        uuid="abababab-1111-1111-1111-111111111111",
+        description="Active unprojected",
+        status="pending",
+        project="",
+        start="20260923T070000Z",
+        estimate_hours=2.0,
+    )
+
+    summary = TaskwarriorApp._project_dashboard(
+        "",
+        [task],
+        [task],
+    )
+
+    assert "Project: (none)" in summary
+    assert "Active: 1" in summary
+    assert "Planned finish: unavailable (no calendar anchor)" in summary
+    assert "abababab | project | active | 2.00h | 0.00h" in summary
+
+
 def test_project_dashboard_handles_empty_project_scope() -> None:
     assert (
         TaskwarriorApp._project_dashboard(
