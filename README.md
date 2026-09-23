@@ -31,6 +31,11 @@ TaskChampion
 - mark tasks done
 - delete tasks with confirmation
 - synchronize with `task sync`
+- edit planning metadata separately from ordinary task fields
+- resolve dependency UUID prefixes against the expanded planning graph
+- reject self-dependencies, ambiguous/unknown prefixes, and dependency cycles before modification
+- analyze dependency graphs, critical path, calendar plans, constraints, milestones and project totals
+- use Timewarrior tracked effort for remaining-work calculations and historical trend reports
 
 ### Key bindings
 
@@ -38,12 +43,23 @@ TaskChampion
 Enter   inspect
 r       refresh
 a       add
-e       edit
+e       edit ordinary task fields
+E       edit planning fields (due/wait/scheduled/dependencies/estimate)
 s       start
 x       stop
 d       done
 D       delete
 y       sync
+g       selected-task dependencies
+G       dependency graph
+C       critical path
+H       Gantt
+L       calendar plan
+K       scheduling constraints
+M       milestones
+P       project overview
+T       Timewarrior effort report
+R       Timewarrior trend (7/30 days, week, month)
 q       quit
 ```
 
@@ -86,9 +102,21 @@ make push-reports
 
 The local HTML report remains available via `make coverage` in `htmlcov/`, but is intentionally not committed.
 
+## Planning editor
+
+Press `E` on a selected task to edit only its planning metadata. This path deliberately
+uses a separate Taskwarrior CLI modification command, so description, project, priority
+and tags are left untouched.
+
+Dependency input accepts comma-separated UUIDs or unique UUID prefixes. The editor shows
+the dependency candidates available from the expanded planning graph, resolves prefixes
+to full UUIDs, and rejects self-dependencies, unknown or ambiguous prefixes, and edits
+that would introduce a dependency cycle.
+
 ## Roadmap
 
-Next: richer Taskwarrior fields and filters, dependency/project views, Timewarrior reports, Gantt, duration/effort metadata, and critical-path analysis.
+Next: persistent user configuration, consolidated project dashboards, richer planning
+editing/navigation, packaging, and a stable tagged release.
 
 ## License
 
