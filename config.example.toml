@@ -1,0 +1,18 @@
+[planning]
+# IANA timezone name, "UTC", or "local".
+timezone = "Europe/Paris"
+
+# datetime.weekday(): Monday=0 ... Sunday=6.
+workdays = [0, 1, 2, 3, 4]
+
+# Local working periods used by calendar scheduling.
+work_periods = [["08:00", "12:00"], ["13:00", "17:00"]]
+
+# ISO calendar dates excluded from working time.
+holidays = ["2026-12-25"]
+
+# 0 disables external dependency expansion; -1 means unlimited recursion.
+dependency_depth = 10
+
+# Omit this key for unlimited parallel planning capacity.
+capacity = 2
