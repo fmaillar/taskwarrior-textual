@@ -1826,8 +1826,7 @@ class TaskwarriorApp(App[None]):
                 for task in candidates
                 if task.uuid.startswith(prefix)
             ]
-            if target.uuid.startswith(prefix):
-                if any(task.uuid == target.uuid for task in matches):
+            if target.uuid.startswith(prefix) and any(task.uuid == target.uuid for task in matches):
                     raise TaskwarriorError(
                         f"task cannot depend on itself: {prefix}"
                     )
