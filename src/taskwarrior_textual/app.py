@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
@@ -225,6 +227,37 @@ class ProjectFilterForm(ModalScreen[str]):
         self.dismiss("")
 
 
+class CalendarPlanScreen(ModalScreen[None]):
+    """Read-only calendar planning view for the current task graph."""
+
+    BINDINGS = [("escape", "close", "Close")]
+
+    CSS = """
+    CalendarPlanScreen { align: center middle; }
+    #calendar-plan-box {
+        width: 94%;
+        max-width: 135;
+        height: auto;
+        max-height: 90%;
+        padding: 1 2;
+        border: round $accent;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, body: str) -> None:
+        super().__init__()
+        self.body = body
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="calendar-plan-box"):
+            yield Label("Calendar plan")
+            yield Static(self.body, id="calendar-plan-body")
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 class GanttScreen(ModalScreen[None]):
     """Read-only local Gantt-like planning view."""
 
@@ -442,6 +475,7 @@ class TaskwarriorApp(App[None]):
         ("shift+g", "show_dependency_overview", "Dependency graph"),
         ("shift+c", "show_critical_path", "Critical path"),
         ("shift+h", "show_gantt", "Gantt"),
+        ("shift+l", "show_calendar_plan", "Calendar"),
         ("shift+p", "show_project_overview", "Projects"),
         ("f", "filter_tag", "Tag"),
         ("v", "toggle_active", "Active"),
@@ -979,6 +1013,134 @@ class TaskwarriorApp(App[None]):
         return "\n".join(lines)
 
     @staticmethod
+    def _planning_datetime(value: str) -> datetime | None:
+        """Parse a Taskwarrior UTC timestamp for local planning calculations."""
+        if not value:
+            return None
+        try:
+            return datetime.strptime(value, "%Y%m%dT%H%M%SZ")
+        except ValueError:
+            return None
+
+    @classmethod
+    def _calendar_plan(cls, tasks: list[Task]) -> str:
+        """Build an absolute UTC schedule from dependencies and scheduled dates."""
+        if not tasks:
+            return "No tasks in current view."
+
+        scheduled = {
+            task.uuid: cls._planning_datetime(task.scheduled)
+            for task in tasks
+        }
+        anchors = [value for value in scheduled.values() if value is not None]
+        if not anchors:
+            return "Calendar plan unavailable: no valid scheduled date in current view."
+        origin = min(anchors)
+
+        by_uuid = {task.uuid: task for task in tasks}
+        dependencies: dict[str, set[str]] = {}
+        unresolved: list[tuple[str, str]] = []
+        for task in tasks:
+            resolved: set[str] = set()
+            for dependency in task.depends:
+                if dependency in by_uuid:
+                    resolved.add(dependency)
+                else:
+                    unresolved.append((task.short_uuid, dependency[:8]))
+            dependencies[task.uuid] = resolved
+
+        remaining = set(by_uuid)
+        order: list[str] = []
+        while remaining:
+            ready = sorted(
+                (
+                    uuid
+                    for uuid in remaining
+                    if not (dependencies[uuid] & remaining)
+                ),
+                key=lambda uuid: by_uuid[uuid].short_uuid,
+            )
+            if not ready:
+                return "Calendar plan unavailable: dependency cycle detected."
+            order.extend(ready)
+            remaining.difference_update(ready)
+
+        starts: dict[str, datetime] = {}
+        finishes: dict[str, datetime] = {}
+        late_by: dict[str, float] = {}
+        invalid_due: list[str] = []
+
+        for uuid in order:
+            candidates = [origin]
+            explicit_start = scheduled[uuid]
+            if explicit_start is not None:
+                candidates.append(explicit_start)
+            candidates.extend(finishes[dependency] for dependency in dependencies[uuid])
+            start = max(candidates)
+            finish = start + timedelta(hours=by_uuid[uuid].estimate_hours)
+            starts[uuid] = start
+            finishes[uuid] = finish
+
+            raw_due = by_uuid[uuid].due
+            due = cls._planning_datetime(raw_due)
+            if raw_due and due is None:
+                invalid_due.append(by_uuid[uuid].short_uuid)
+            if due is not None:
+                deadline = due
+                if due.hour == 0 and due.minute == 0 and due.second == 0:
+                    deadline += timedelta(days=1)
+                if finish > deadline:
+                    late_by[uuid] = (finish - deadline).total_seconds() / 3600
+
+        project_finish = max(finishes.values())
+        lines = [
+            f"Calendar origin: {origin:%Y-%m-%d %H:%M} UTC | "
+            f"Project finish: {project_finish:%Y-%m-%d %H:%M} UTC",
+            f"Late tasks: {len(late_by)}",
+            "",
+            "UUID | Start -> Finish | Due | Status | Description",
+        ]
+
+        for uuid in sorted(order, key=lambda item: (starts[item], by_uuid[item].short_uuid)):
+            task = by_uuid[uuid]
+            due = cls._planning_datetime(task.due)
+            if due is None:
+                due_text = task.display_due if task.due else "-"
+                status = "-"
+            else:
+                due_text = task.display_due
+                status = (
+                    f"LATE +{late_by[uuid]:.2f}h"
+                    if uuid in late_by
+                    else "on time"
+                )
+            lines.append(
+                f"{task.short_uuid} | {starts[uuid]:%Y-%m-%d %H:%M} -> "
+                f"{finishes[uuid]:%Y-%m-%d %H:%M} | {due_text} | "
+                f"{status} | {task.description}"
+            )
+
+        unestimated = sorted(
+            task.short_uuid for task in tasks if task.estimate_hours == 0
+        )
+        if unestimated:
+            lines.extend(
+                ["", "Unestimated tasks treated as 0h: " + ", ".join(unestimated)]
+            )
+
+        if unresolved:
+            rendered = "; ".join(
+                f"{task_uuid} -> {dependency_uuid}"
+                for task_uuid, dependency_uuid in sorted(unresolved)
+            )
+            lines.extend(["", "Unresolved dependencies ignored: " + rendered])
+
+        if invalid_due:
+            lines.extend(["", "Invalid due dates ignored: " + ", ".join(sorted(invalid_due))])
+
+        return "\n".join(lines)
+
+    @staticmethod
     def _project_overview(tasks: list[Task]) -> str:
         """Summarize task counts and urgency by project for the current view."""
         if not tasks:
@@ -1143,6 +1305,10 @@ class TaskwarriorApp(App[None]):
     def action_show_gantt(self) -> None:
         """Show an estimate-based local Gantt view for the current view."""
         self.push_screen(GanttScreen(self._gantt_summary(self.view_tasks)))
+
+    def action_show_calendar_plan(self) -> None:
+        """Show an absolute calendar schedule for the current view."""
+        self.push_screen(CalendarPlanScreen(self._calendar_plan(self.view_tasks)))
 
     def action_show_project_overview(self) -> None:
         """Show a local project summary for the currently loaded view."""
