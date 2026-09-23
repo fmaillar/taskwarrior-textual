@@ -64,3 +64,79 @@ class TaskwarriorClient:
     def information(self, uuid_prefix: str) -> str:
         """Return Taskwarrior's human-readable task information."""
         return self._run([uuid_prefix])
+
+    @staticmethod
+    def _attributes(
+        *,
+        project: str = "",
+        priority: str = "",
+        due: str = "",
+        include_empty: bool = False,
+    ) -> list[str]:
+        values = {"project": project, "priority": priority, "due": due}
+        return [
+            f"{name}:{value}"
+            for name, value in values.items()
+            if include_empty or value
+        ]
+
+    def add(
+        self,
+        description: str,
+        *,
+        project: str = "",
+        priority: str = "",
+        due: str = "",
+    ) -> str:
+        """Create a task and return Taskwarrior's response."""
+        return self._run(
+            [
+                "add",
+                description,
+                *self._attributes(project=project, priority=priority, due=due),
+            ]
+        )
+
+    def modify(
+        self,
+        uuid_prefix: str,
+        description: str,
+        *,
+        project: str = "",
+        priority: str = "",
+        due: str = "",
+    ) -> str:
+        """Replace the main editable fields of a task."""
+        return self._run(
+            [
+                uuid_prefix,
+                "modify",
+                f"description:{description}",
+                *self._attributes(
+                    project=project,
+                    priority=priority,
+                    due=due,
+                    include_empty=True,
+                ),
+            ]
+        )
+
+    def start(self, uuid_prefix: str) -> str:
+        """Start a task (and Timewarrior when its hook is installed)."""
+        return self._run([uuid_prefix, "start"])
+
+    def stop(self, uuid_prefix: str) -> str:
+        """Stop a task."""
+        return self._run([uuid_prefix, "stop"])
+
+    def done(self, uuid_prefix: str) -> str:
+        """Mark a task as completed."""
+        return self._run([uuid_prefix, "done"])
+
+    def delete(self, uuid_prefix: str) -> str:
+        """Mark a task as deleted without Taskwarrior's CLI prompt."""
+        return self._run([uuid_prefix, "delete", "rc.confirmation=off"])
+
+    def sync(self) -> str:
+        """Synchronize the local Taskwarrior replica."""
+        return self._run(["sync"])
