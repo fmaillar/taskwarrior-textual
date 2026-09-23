@@ -139,6 +139,46 @@ class SearchForm(ModalScreen[str]):
         self.dismiss("")
 
 
+class TagFilterForm(ModalScreen[str]):
+    """Modal exact tag filter over the currently loaded view."""
+
+    BINDINGS = [("escape", "clear_filter", "Clear tag filter")]
+
+    CSS = """
+    TagFilterForm { align: center top; padding-top: 3; }
+    #tag-filter-box {
+        width: 70%;
+        max-width: 80;
+        height: auto;
+        padding: 1 2;
+        border: round $accent;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, initial_tag: str = "") -> None:
+        super().__init__()
+        self.initial_tag = initial_tag
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="tag-filter-box"):
+            yield Label("Filter by exact tag")
+            yield Input(
+                value=self.initial_tag,
+                placeholder="Tag (empty clears filter)",
+                id="tag-filter",
+            )
+
+    def on_mount(self) -> None:
+        self.query_one("#tag-filter", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value.strip())
+
+    def action_clear_filter(self) -> None:
+        self.dismiss("")
+
+
 class ProjectFilterForm(ModalScreen[str]):
     """Modal exact project filter over the currently loaded view."""
 
@@ -301,6 +341,9 @@ class TaskwarriorApp(App[None]):
         ("b", "toggle_blocked", "Blocked"),
         ("g", "show_dependencies", "Dependencies"),
         ("shift+p", "show_project_overview", "Projects"),
+        ("f", "filter_tag", "Tag"),
+        ("v", "toggle_active", "Active"),
+        ("c", "clear_local_state", "Clear"),
     ]
 
     SORT_CYCLE = (None, "urgency", "when", "project", "priority")
@@ -318,7 +361,9 @@ class TaskwarriorApp(App[None]):
         self.current_view = "pending"
         self.search_query = ""
         self.project_filter = ""
+        self.tag_filter = ""
         self.blocked_only = False
+        self.active_only = False
         self.sort_key: str | None = None
 
     def compose(self) -> ComposeResult:
@@ -383,6 +428,14 @@ class TaskwarriorApp(App[None]):
             return True
         return task.project.casefold() == project.casefold()
 
+    @staticmethod
+    def _matches_tag(task: Task, tag: str) -> bool:
+        """Match an exact tag filter, case-insensitively."""
+        if not tag:
+            return True
+        needle = tag.casefold()
+        return any(candidate.casefold() == needle for candidate in task.tags)
+
     @classmethod
     def _sort_tasks(
         cls,
@@ -439,7 +492,9 @@ class TaskwarriorApp(App[None]):
             for task in self.view_tasks
             if self._matches_search(task, self.search_query)
             and self._matches_project(task, self.project_filter)
+            and self._matches_tag(task, self.tag_filter)
             and (not self.blocked_only or bool(task.depends))
+            and (not self.active_only or task.active)
         ]
         visible = self._sort_tasks(visible, self.sort_key, self.current_view)
 
@@ -455,8 +510,12 @@ class TaskwarriorApp(App[None]):
             state.append(f"search={self.search_query}")
         if self.project_filter:
             state.append(f"project={self.project_filter}")
+        if self.tag_filter:
+            state.append(f"tag={self.tag_filter}")
         if self.blocked_only:
             state.append("blocked")
+        if self.active_only:
+            state.append("active")
         if self.sort_key:
             state.append(f"sort={self.sort_key}")
         details.update(" | ".join(state) + ".")
@@ -469,6 +528,11 @@ class TaskwarriorApp(App[None]):
     def _apply_project_filter(self, project: str) -> None:
         """Apply an exact local project filter without refetching."""
         self.project_filter = project.strip()
+        self._render_tasks()
+
+    def _apply_tag_filter(self, tag: str) -> None:
+        """Apply an exact local tag filter without refetching."""
+        self.tag_filter = tag.strip()
         self._render_tasks()
 
     @staticmethod
@@ -602,6 +666,28 @@ class TaskwarriorApp(App[None]):
     def action_toggle_blocked(self) -> None:
         """Toggle a local filter for tasks with unresolved dependencies."""
         self.blocked_only = not self.blocked_only
+        self._render_tasks()
+
+    def action_filter_tag(self) -> None:
+        """Open an exact local tag filter."""
+        self.push_screen(
+            TagFilterForm(self.tag_filter),
+            self._apply_tag_filter,
+        )
+
+    def action_toggle_active(self) -> None:
+        """Toggle a local filter for currently active tasks."""
+        self.active_only = not self.active_only
+        self._render_tasks()
+
+    def action_clear_local_state(self) -> None:
+        """Clear all local filters and sorting without refetching."""
+        self.search_query = ""
+        self.project_filter = ""
+        self.tag_filter = ""
+        self.blocked_only = False
+        self.active_only = False
+        self.sort_key = None
         self._render_tasks()
 
     def action_show_dependencies(self) -> None:
