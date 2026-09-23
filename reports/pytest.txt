@@ -8,109 +8,10 @@ asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, a
 created: 4/4 workers
 4 workers [284 items]
 
-............................................F..........F................ [ 25%]
+........................................................................ [ 25%]
 ........................................................................ [ 50%]
 ........................................................................ [ 76%]
 ....................................................................     [100%]
-=================================== FAILURES ===================================
-___ test_timewarrior_trend_clips_to_requested_window_and_handles_no_activity ___
-[gw2] linux -- Python 3.13.5 /home/fgm/projets/taskwarrior-textual/.venv/bin/python3
-
-    def test_timewarrior_trend_clips_to_requested_window_and_handles_no_activity() -> None:
-        task = Task(
-            uuid="71717171-1111-1111-1111-111111111111",
-            description="Old",
-            status="pending",
-            project="Archive",
-        )
-        old = TimewarriorInterval(
-            task_uuid=task.uuid,
-            start=datetime(2026, 9, 15, 8, 0, tzinfo=UTC),
-            end=datetime(2026, 9, 15, 10, 0, tzinfo=UTC),
-        )
-    
-        unknown = TimewarriorInterval(
-            task_uuid="99999999-1111-1111-1111-111111111111",
-            start=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
-            end=datetime(2026, 9, 23, 9, 0, tzinfo=UTC),
-        )
-    
-        summary = TaskwarriorApp._timewarrior_trend(
-            [task],
-            (old, unknown),
-            PlanningSettings(timezone="UTC"),
-            now=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
-            days=7,
-        )
-    
-        assert "Tracked in window: 0.00h" in summary
->       assert "Archive |" not in summary.split("Projects\n", 1)[1]
-E       AssertionError: assert 'Archive |' not in 'Project | T...00h | -2.00h'
-E         
-E         'Archive |' is contained here:
-E           Project | Tracked | Previous | Change
-E           Archive | 0.00h | 2.00h | -2.00h
-E         ? +++++++++
-
-tests/test_app.py:1696: AssertionError
-_________ test_timewarrior_trend_week_and_month_compare_period_to_date _________
-[gw3] linux -- Python 3.13.5 /home/fgm/projets/taskwarrior-textual/.venv/bin/python3
-
-    def test_timewarrior_trend_week_and_month_compare_period_to_date() -> None:
-        task = Task(
-            uuid="93939393-1111-1111-1111-111111111111",
-            description="Period work",
-            status="pending",
-            project="Work",
-        )
-        intervals = (
-            TimewarriorInterval(
-                task_uuid=task.uuid,
-                start=datetime(2026, 9, 14, 8, 0, tzinfo=UTC),
-                end=datetime(2026, 9, 14, 9, 0, tzinfo=UTC),
-            ),
-            TimewarriorInterval(
-                task_uuid=task.uuid,
-                start=datetime(2026, 9, 16, 8, 0, tzinfo=UTC),
-                end=datetime(2026, 9, 16, 9, 0, tzinfo=UTC),
-            ),
-            TimewarriorInterval(
-                task_uuid=task.uuid,
-                start=datetime(2026, 8, 1, 8, 0, tzinfo=UTC),
-                end=datetime(2026, 8, 1, 11, 0, tzinfo=UTC),
-            ),
-            TimewarriorInterval(
-                task_uuid=task.uuid,
-                start=datetime(2026, 8, 23, 8, 0, tzinfo=UTC),
-                end=datetime(2026, 8, 23, 9, 0, tzinfo=UTC),
-            ),
-            TimewarriorInterval(
-                task_uuid=task.uuid,
-                start=datetime(2026, 9, 21, 8, 0, tzinfo=UTC),
-                end=datetime(2026, 9, 21, 12, 0, tzinfo=UTC),
-            ),
-            TimewarriorInterval(
-                task_uuid=task.uuid,
-                start=datetime(2026, 9, 1, 8, 0, tzinfo=UTC),
-                end=datetime(2026, 9, 1, 10, 0, tzinfo=UTC),
-            ),
-        )
-        settings = PlanningSettings(timezone="UTC")
-        now = datetime(2026, 9, 23, 12, 0, tzinfo=UTC)
-    
-        week = TaskwarriorApp._timewarrior_trend(
-            [task], intervals, settings, now=now, period="week"
-        )
-        month = TaskwarriorApp._timewarrior_trend(
-            [task], intervals, settings, now=now, period="month"
-        )
-    
-        assert "Tracked in window: 4.00h" in week
-        assert "Previous comparable: 2.00h" in week
->       assert "Tracked in window: 6.00h" in month
-E       AssertionError: assert 'Tracked in window: 6.00h' in 'Current month 2026-09-01 through 2026-09-30 (UTC)\nTracked in window: 8.00h\nPrevious comparable: 4.00h\nChange: +4.0...26-09-29 | 0.00h\n2026-09-30 | 0.00h\n\nProjects\nProject | Tracked | Previous | Change\nWork | 8.00h | 4.00h | +4.00h'
-
-tests/test_app.py:1595: AssertionError
 - generated xml file: /home/fgm/projets/taskwarrior-textual/reports/junit.xml --
 ================================ tests coverage ================================
 _______________ coverage: platform linux, python 3.13.5-final-0 ________________
@@ -123,7 +24,4 @@ TOTAL    1588      0    434      0   100%
 Coverage HTML written to dir htmlcov
 Coverage XML written to file reports/coverage.xml
 Required test coverage of 95.0% reached. Total coverage: 100.00%
-=========================== short test summary info ============================
-FAILED tests/test_app.py::test_timewarrior_trend_clips_to_requested_window_and_handles_no_activity
-FAILED tests/test_app.py::test_timewarrior_trend_week_and_month_compare_period_to_date
-======================== 2 failed, 282 passed in 47.01s ========================
+============================= 284 passed in 47.46s =============================
