@@ -166,6 +166,7 @@ def test_task_row_shows_active_marker_tags_and_due_in_pending_view() -> None:
         "2026-09-26",
         "mail,rms",
         "Vérifier mail de RMS",
+        "2.50h",
         "9.38",
     )
 
@@ -203,6 +204,7 @@ def test_task_row_has_no_active_marker_for_inactive_task() -> None:
     row = TaskwarriorApp._task_row(task, "pending")
     assert row[1] == ""
     assert row[2] == ""
+    assert row[-2] == ""
 
 
 async def test_table_uses_enriched_row_shape() -> None:
@@ -553,10 +555,11 @@ def test_gantt_summary_renders_dependency_schedule() -> None:
     summary = TaskwarriorApp._gantt_summary([finish, middle, parallel, first])
 
     assert "Scale: 1 char = 1h | Project duration: 7.00h" in summary
-    assert "11111111 | 0.00-2.00h | ██ | Foundation" in summary
-    assert "22222222 | 0.00-1.00h | █ | Parallel" in summary
-    assert "33333333 | 2.00-5.00h |   ███ | Middle" in summary
-    assert "44444444 | 5.00-7.00h |      ██ | Finish" in summary
+    assert "11111111 | * | 0.00-2.00h | ██ | Foundation" in summary
+    assert "22222222 |   | 0.00-1.00h | █ | Parallel" in summary
+    assert "33333333 | * | 2.00-5.00h |   ███ | Middle" in summary
+    assert "44444444 | * | 5.00-7.00h |      ██ | Finish" in summary
+    assert "Critical marker: *" in summary
 
 
 def test_gantt_summary_marks_zero_estimates_and_unresolved_dependencies() -> None:
@@ -575,8 +578,8 @@ def test_gantt_summary_marks_zero_estimates_and_unresolved_dependencies() -> Non
 
     summary = TaskwarriorApp._gantt_summary([second, first])
 
-    assert "aaaaaaaa | 0.00-0.00h | · | Unknown estimate" in summary
-    assert "bbbbbbbb | 0.00-1.00h | █ | External dependency" in summary
+    assert "aaaaaaaa | * | 0.00-0.00h | · | Unknown estimate" in summary
+    assert "bbbbbbbb | * | 0.00-1.00h | █ | External dependency" in summary
     assert "Unestimated tasks shown as ·: aaaaaaaa" in summary
     assert "Unresolved dependencies ignored: bbbbbbbb -> 99999999" in summary
 
@@ -631,8 +634,8 @@ async def test_gantt_key_opens_local_screen_without_refetch() -> None:
         assert isinstance(app.screen, GanttScreen)
         body = str(app.screen.query_one("#gantt-body").render())
         assert "Project duration: 5.00h" in body
-        assert "11111111 | 0.00-2.00h | ██ | First" in body
-        assert "22222222 | 2.00-5.00h |   ███ | Second" in body
+        assert "11111111 | * | 0.00-2.00h | ██ | First" in body
+        assert "22222222 | * | 2.00-5.00h |   ███ | Second" in body
         assert client.calls.count(("view", "pending")) == initial_view_calls
 
         await pilot.press("escape")
@@ -644,10 +647,10 @@ def test_project_overview_groups_current_view_deterministically() -> None:
     summary = TaskwarriorApp._project_overview(SEARCH_TASKS)
 
     assert summary.splitlines() == [
-        "Project | Tasks | Active | Blocked | Urgency",
-        "Docs | 1 | 0 | 0 | 4.00",
-        "Infra | 1 | 0 | 1 | 12.00",
-        "(none) | 1 | 0 | 0 | 1.00",
+        "Project | Tasks | Active | Blocked | Estimate | Unestimated | Urgency",
+        "Docs | 1 | 0 | 0 | 0.00h | 1 | 4.00",
+        "Infra | 1 | 0 | 1 | 0.00h | 1 | 12.00",
+        "(none) | 1 | 0 | 0 | 0.00h | 1 | 1.00",
     ]
 
 
@@ -663,7 +666,29 @@ def test_project_overview_counts_active_tasks() -> None:
 
     summary = TaskwarriorApp._project_overview([*SEARCH_TASKS, active])
 
-    assert "Infra | 2 | 1 | 1 | 15.50" in summary
+    assert "Infra | 2 | 1 | 1 | 0.00h | 2 | 15.50" in summary
+
+
+def test_project_overview_sums_estimates_and_counts_missing() -> None:
+    estimated = Task(
+        uuid="eeeeeeee-1111-2222-3333-444444444444",
+        description="Estimated",
+        status="pending",
+        project="Infra",
+        estimate_hours=2.5,
+        urgency=2.0,
+    )
+    unestimated = Task(
+        uuid="ffffffff-1111-2222-3333-444444444444",
+        description="Missing estimate",
+        status="pending",
+        project="Infra",
+        urgency=1.0,
+    )
+
+    summary = TaskwarriorApp._project_overview([estimated, unestimated])
+
+    assert "Infra | 2 | 0 | 0 | 2.50h | 1 | 3.00" in summary
 
 
 def test_project_overview_handles_empty_view() -> None:
