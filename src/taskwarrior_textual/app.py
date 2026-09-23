@@ -655,7 +655,7 @@ class TaskwarriorApp(App[None]):
         if sort_key is None:
             return list(tasks)
         if sort_key == "urgency":
-            return sorted(tasks, key=lambda task: (-task.urgency, task.short_uuid))
+            return sorted(tasks, key=lambda task: (-task.urgency, task.short_uuid, task.uuid))
         if sort_key == "when":
             def when(task: Task) -> str:
                 if view == "waiting":
@@ -668,7 +668,12 @@ class TaskwarriorApp(App[None]):
 
             return sorted(
                 tasks,
-                key=lambda task: (not bool(when(task)), when(task), task.short_uuid),
+                key=lambda task: (
+                    not bool(when(task)),
+                    when(task),
+                    task.short_uuid,
+                    task.uuid,
+                ),
             )
         if sort_key == "project":
             return sorted(
@@ -677,6 +682,7 @@ class TaskwarriorApp(App[None]):
                     not bool(task.project),
                     task.project.casefold(),
                     task.short_uuid,
+                    task.uuid,
                 ),
             )
         priority_rank = {"H": 0, "M": 1, "L": 2}
@@ -685,6 +691,7 @@ class TaskwarriorApp(App[None]):
             key=lambda task: (
                 priority_rank.get(task.priority, 3),
                 task.short_uuid,
+                task.uuid,
             ),
         )
 
@@ -976,7 +983,11 @@ class TaskwarriorApp(App[None]):
 
         for uuid in sorted(
             order,
-            key=lambda item: (earliest_start[item], by_uuid[item].short_uuid),
+            key=lambda item: (
+                earliest_start[item],
+                by_uuid[item].short_uuid,
+                item,
+            ),
         ):
             task = by_uuid[uuid]
             offset = round(earliest_start[uuid])
