@@ -32,7 +32,67 @@ def test_build_planning_graph_resolves_edges_and_orders_deterministically() -> N
     assert graph.successors[first.uuid] == frozenset({last.uuid})
     assert graph.successors[parallel.uuid] == frozenset({last.uuid})
     assert graph.unresolved == ()
+    assert graph.cycle_nodes == frozenset()
+    assert graph.blocked_by_cycle == frozenset()
     assert graph.cyclic is False
+
+
+def test_build_planning_graph_classifies_bridge_between_cycles_exactly() -> None:
+    a = Task(
+        uuid="aaaaaaaa-1111-1111-1111-111111111111",
+        description="A",
+        status="pending",
+        depends=("bbbbbbbb-1111-1111-1111-111111111111",),
+    )
+    b = Task(
+        uuid="bbbbbbbb-1111-1111-1111-111111111111",
+        description="B",
+        status="pending",
+        depends=(a.uuid,),
+    )
+    bridge = Task(
+        uuid="cccccccc-1111-1111-1111-111111111111",
+        description="Bridge",
+        status="pending",
+        depends=(a.uuid,),
+    )
+    c = Task(
+        uuid="dddddddd-1111-1111-1111-111111111111",
+        description="C",
+        status="pending",
+        depends=("eeeeeeee-1111-1111-1111-111111111111", bridge.uuid),
+    )
+    d = Task(
+        uuid="eeeeeeee-1111-1111-1111-111111111111",
+        description="D",
+        status="pending",
+        depends=(c.uuid,),
+    )
+
+    graph = build_planning_graph([d, bridge, b, c, a])
+
+    assert graph.cycle_nodes == frozenset({a.uuid, b.uuid, c.uuid, d.uuid})
+    assert graph.blocked_by_cycle == frozenset({bridge.uuid})
+    assert graph.remaining == (a.uuid, b.uuid, bridge.uuid, c.uuid, d.uuid)
+
+
+def test_build_planning_graph_treats_self_dependency_as_cycle() -> None:
+    task = Task(
+        uuid="ffffffff-1111-1111-1111-111111111111",
+        description="Self loop",
+        status="pending",
+    )
+    task = Task(
+        uuid=task.uuid,
+        description=task.description,
+        status=task.status,
+        depends=(task.uuid,),
+    )
+
+    graph = build_planning_graph([task])
+
+    assert graph.cycle_nodes == frozenset({task.uuid})
+    assert graph.blocked_by_cycle == frozenset()
 
 
 def test_build_planning_graph_keeps_external_dependencies_visible() -> None:
@@ -74,6 +134,8 @@ def test_build_planning_graph_reports_cycles_without_crashing() -> None:
 
     assert graph.order == (ready.uuid,)
     assert graph.remaining == (first.uuid, second.uuid)
+    assert graph.cycle_nodes == frozenset({first.uuid, second.uuid})
+    assert graph.blocked_by_cycle == frozenset()
     assert graph.cyclic is True
 
 
