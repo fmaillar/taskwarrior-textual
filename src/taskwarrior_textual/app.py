@@ -630,32 +630,128 @@ class ScheduleProposalScreen(ModalScreen[bool]):
         self.dismiss(False)
 
 
-class ProjectDashboardScreen(ModalScreen[None]):
-    """Read-only consolidated planning dashboard for one project."""
+class ProjectDashboardScreen(ModalScreen[tuple[str, str] | None]):
+    """Interactive project cockpit over project tasks and external prerequisites."""
 
-    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [("escape", "close", "Close")]
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+        ("escape", "close", "Close"),
+        ("enter", "inspect", "Inspect"),
+        ("e", "edit_task", "Edit"),
+        ("shift+e", "edit_planning", "Planning"),
+        ("g", "dependencies", "Dependencies"),
+        ("s", "start_task", "Start"),
+        ("x", "stop_task", "Stop"),
+        ("d", "done_task", "Done"),
+        ("shift+s", "auto_schedule", "Auto schedule"),
+    ]
 
     CSS = """
     ProjectDashboardScreen { align: center middle; }
     #project-dashboard-box {
         width: 96%;
         max-width: 140;
-        height: auto;
-        max-height: 92%;
+        height: 92%;
         padding: 1 2;
         border: round $accent;
         background: $surface;
     }
+    #project-dashboard-body { height: auto; margin-bottom: 1; }
+    #project-dashboard-tasks { height: 1fr; }
+    #project-dashboard-help { height: auto; margin-top: 1; }
     """
 
-    def __init__(self, body: str) -> None:
+    def __init__(
+        self,
+        body: str,
+        tasks: list[Task],
+        project_uuids: set[str],
+    ) -> None:
         super().__init__()
         self.body = body
+        self.tasks = list(tasks)
+        self.project_uuids = set(project_uuids)
 
     def compose(self) -> ComposeResult:
         with Vertical(id="project-dashboard-box"):
-            yield Label("Project dashboard")
+            yield Label("Project cockpit")
             yield Static(self.body, id="project-dashboard-body")
+            yield DataTable(
+                id="project-dashboard-tasks",
+                cursor_type="row",
+                zebra_stripes=True,
+            )
+            yield Static(
+                "Enter inspect | e edit | E planning | g dependencies | "
+                "s/x start/stop | d done | S auto-schedule | Esc close",
+                id="project-dashboard-help",
+            )
+
+    def on_mount(self) -> None:
+        table = self.query_one("#project-dashboard-tasks", DataTable)
+        table.add_columns(
+            "UUID",
+            "Scope",
+            "State",
+            "Project",
+            "Estimate",
+            "Due",
+            "Description",
+        )
+        for task in sorted(
+            self.tasks,
+            key=lambda item: (
+                item.uuid not in self.project_uuids,
+                item.project.casefold(),
+                item.short_uuid,
+                item.uuid,
+            ),
+        ):
+            table.add_row(
+                task.short_uuid,
+                "project" if task.uuid in self.project_uuids else "external",
+                "active" if task.active else task.status,
+                task.project or "(none)",
+                task.display_estimate or "—",
+                task.display_due or "—",
+                task.description,
+                key=task.uuid,
+            )
+
+    def _selected_uuid(self) -> str | None:
+        table = self.query_one("#project-dashboard-tasks", DataTable)
+        if table.row_count == 0:
+            return None
+        row_key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key
+        return str(row_key.value)
+
+    def _emit_task_action(self, action: str) -> None:
+        uuid = self._selected_uuid()
+        if uuid is not None:
+            self.dismiss((action, uuid))
+
+    def action_inspect(self) -> None:
+        self._emit_task_action("inspect")
+
+    def action_edit_task(self) -> None:
+        self._emit_task_action("edit")
+
+    def action_edit_planning(self) -> None:
+        self._emit_task_action("planning")
+
+    def action_dependencies(self) -> None:
+        self._emit_task_action("dependencies")
+
+    def action_start_task(self) -> None:
+        self._emit_task_action("start")
+
+    def action_stop_task(self) -> None:
+        self._emit_task_action("stop")
+
+    def action_done_task(self) -> None:
+        self._emit_task_action("done")
+
+    def action_auto_schedule(self) -> None:
+        self.dismiss(("auto_schedule", ""))
 
     def action_close(self) -> None:
         self.dismiss(None)
@@ -2085,6 +2181,7 @@ class TaskwarriorApp(App[None]):
         *,
         now: datetime | None = None,
         tracked_hours: dict[str, float] | None = None,
+        include_tasks: bool = True,
     ) -> str:
         """Consolidate project effort, dependencies, and calendar planning."""
         if not project_tasks:
@@ -2225,6 +2322,9 @@ class TaskwarriorApp(App[None]):
                     for task_uuid, dependency_uuid in graph.unresolved
                 )
             )
+
+        if not include_tasks:
+            return "\n".join(lines)
 
         lines.extend(
             [
@@ -2423,10 +2523,8 @@ class TaskwarriorApp(App[None]):
             self._show_error(exc)
             return None
 
-    def _run_task_action(self, callback) -> None:
-        task = self._selected_task()
-        if task is None:
-            return
+    def _run_task_action_for(self, task: Task, callback) -> None:
+        """Run a Taskwarrior state action for an explicit task."""
         try:
             message = callback(task.short_uuid)
         except TaskwarriorError as exc:
@@ -2434,6 +2532,12 @@ class TaskwarriorApp(App[None]):
             return
         self.query_one("#details", Static).update(message or "Done.")
         self.action_refresh_tasks()
+
+    def _run_task_action(self, callback) -> None:
+        task = self._selected_task()
+        if task is None:
+            return
+        self._run_task_action_for(task, callback)
 
     def action_refresh_tasks(self) -> None:
         """Reload the current view, tracking effort, then reapply local state."""
@@ -2522,6 +2626,19 @@ class TaskwarriorApp(App[None]):
         self.sort_key = None
         self._render_tasks()
 
+    def _show_task_dependencies(
+        self,
+        task: Task,
+        tasks: list[Task],
+    ) -> None:
+        """Show dependency links for an explicit task in an expanded graph."""
+        self.push_screen(
+            DependencyScreen(
+                f"Dependencies for {task.short_uuid}",
+                self._dependency_summary(task, tasks),
+            )
+        )
+
     def action_show_dependencies(self) -> None:
         """Show dependency links for the selected task, including external ancestors."""
         task = self._selected_task()
@@ -2530,12 +2647,7 @@ class TaskwarriorApp(App[None]):
         tasks = self._expanded_planning_tasks()
         if tasks is None:
             return
-        self.push_screen(
-            DependencyScreen(
-                f"Dependencies for {task.short_uuid}",
-                self._dependency_summary(task, tasks),
-            )
-        )
+        self._show_task_dependencies(task, tasks)
 
     def action_show_dependency_overview(self) -> None:
         """Show the dependency graph, expanding external ancestors."""
@@ -2748,7 +2860,7 @@ class TaskwarriorApp(App[None]):
         )
 
     def action_show_project_dashboard(self) -> None:
-        """Show a consolidated dashboard for the selected task's project."""
+        """Open the selected project's interactive planning cockpit."""
         selected = self._selected_task()
         if selected is None:
             return
@@ -2771,6 +2883,44 @@ class TaskwarriorApp(App[None]):
         if context is None:
             return
         tracked_hours, now = context
+        by_uuid = {task.uuid: task for task in expanded_tasks}
+        project_uuids = {task.uuid for task in project_tasks}
+
+        def handle(result: tuple[str, str] | None) -> None:
+            if result is None:
+                return
+            action, task_uuid = result
+            if action == "auto_schedule":
+                self.action_auto_schedule_project()
+                return
+
+            task = by_uuid[task_uuid]
+            handlers = {
+                "inspect": self._inspect_task,
+                "edit": self._edit_task,
+                "planning": lambda item: self._edit_planning_task(
+                    item,
+                    expanded_tasks,
+                ),
+                "dependencies": lambda item: self._show_task_dependencies(
+                    item,
+                    expanded_tasks,
+                ),
+                "start": lambda item: self._run_task_action_for(
+                    item,
+                    self.client.start,
+                ),
+                "stop": lambda item: self._run_task_action_for(
+                    item,
+                    self.client.stop,
+                ),
+                "done": lambda item: self._run_task_action_for(
+                    item,
+                    self.client.done,
+                ),
+            }
+            handlers[action](task)
+
         self.push_screen(
             ProjectDashboardScreen(
                 self._project_dashboard(
@@ -2780,8 +2930,12 @@ class TaskwarriorApp(App[None]):
                     self.planning_settings,
                     now=now,
                     tracked_hours=tracked_hours,
-                )
-            )
+                    include_tasks=False,
+                ),
+                expanded_tasks,
+                project_uuids,
+            ),
+            handle,
         )
 
     def action_show_project_overview(self) -> None:
@@ -2805,17 +2959,21 @@ class TaskwarriorApp(App[None]):
         """Inspect the row activated with Enter in the task table."""
         self.action_inspect_task()
 
-    def action_inspect_task(self) -> None:
-        """Show Taskwarrior information for the selected row."""
-        task = self._selected_task()
-        if task is None:
-            return
+    def _inspect_task(self, task: Task) -> None:
+        """Show Taskwarrior information for an explicit task."""
         try:
             information = self.client.information(task.short_uuid)
         except TaskwarriorError as exc:
             self._show_error(exc)
             return
         self.query_one("#details", Static).update(information)
+
+    def action_inspect_task(self) -> None:
+        """Show Taskwarrior information for the selected row."""
+        task = self._selected_task()
+        if task is None:
+            return
+        self._inspect_task(task)
 
     def action_add_task(self) -> None:
         """Open the add-task form."""
@@ -2832,11 +2990,8 @@ class TaskwarriorApp(App[None]):
 
         self.push_screen(TaskForm(), save)
 
-    def action_edit_task(self) -> None:
-        """Edit the selected task."""
-        task = self._selected_task()
-        if task is None:
-            return
+    def _edit_task(self, task: Task) -> None:
+        """Open the ordinary task editor for an explicit task."""
 
         def save(values: dict[str, str] | None) -> None:
             if values is None:
@@ -2854,14 +3009,19 @@ class TaskwarriorApp(App[None]):
 
         self.push_screen(TaskForm(task), save)
 
-    def action_edit_planning(self) -> None:
-        """Edit scheduling metadata and dependencies for the selected task."""
+    def action_edit_task(self) -> None:
+        """Edit the selected task."""
         task = self._selected_task()
         if task is None:
             return
-        candidates = self._expanded_planning_tasks()
-        if candidates is None:
-            return
+        self._edit_task(task)
+
+    def _edit_planning_task(
+        self,
+        task: Task,
+        candidates: list[Task],
+    ) -> None:
+        """Open the planning editor for an explicit task and graph."""
 
         def save(values: dict[str, str] | None) -> None:
             if values is None:
@@ -2891,6 +3051,16 @@ class TaskwarriorApp(App[None]):
             self.action_refresh_tasks()
 
         self.push_screen(PlanningForm(task, candidates), save)
+
+    def action_edit_planning(self) -> None:
+        """Edit scheduling metadata and dependencies for the selected task."""
+        task = self._selected_task()
+        if task is None:
+            return
+        candidates = self._expanded_planning_tasks()
+        if candidates is None:
+            return
+        self._edit_planning_task(task, candidates)
 
     def action_start_task(self) -> None:
         self._run_task_action(self.client.start)

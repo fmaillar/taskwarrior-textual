@@ -3026,13 +3026,179 @@ async def test_project_dashboard_key_uses_selected_project_and_expands_dependenc
         body = str(app.screen.query_one("#project-dashboard-body").render())
         assert "Project: Infra" in body
         assert "Other project" not in body
-        assert "external:Shared" in body
+        assert "Tasks" not in body
+        table = app.screen.query_one("#project-dashboard-tasks")
+        assert table.row_count == 3
+        rows = [list(table.get_row_at(index)) for index in range(table.row_count)]
+        assert any(
+            row[1] == "external" and row[3] == "Shared" and row[-1] == "External"
+            for row in rows
+        )
         assert ("expand_dependencies", app.planning_settings.dependency_depth) in client.calls
         assert ("timewarrior_hours", 3) in client.calls
 
         await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(app.screen, ProjectDashboardScreen)
+
+
+@pytest.mark.parametrize(
+    ("method_name", "action"),
+    [
+        ("action_inspect", "inspect"),
+        ("action_edit_task", "edit"),
+        ("action_edit_planning", "planning"),
+        ("action_dependencies", "dependencies"),
+        ("action_start_task", "start"),
+        ("action_stop_task", "stop"),
+        ("action_done_task", "done"),
+    ],
+)
+async def test_project_cockpit_screen_emits_selected_task_actions(
+    method_name: str,
+    action: str,
+) -> None:
+    app = TaskwarriorApp(client=FakeUiClient(tasks=[]))
+    results: list[tuple[str, str] | None] = []
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = ProjectDashboardScreen("Summary", [TASK], {TASK.uuid})
+        app.push_screen(screen, results.append)
+        await pilot.pause()
+
+        table = screen.query_one("#project-dashboard-tasks")
+        assert table.row_count == 1
+        assert list(table.get_row_at(0))[:3] == [
+            TASK.short_uuid,
+            "project",
+            "active",
+        ]
+
+        getattr(screen, method_name)()
+        await pilot.pause()
+
+    assert results == [(action, TASK.uuid)]
+
+
+async def test_project_cockpit_screen_emits_auto_schedule_and_handles_empty_table() -> None:
+    app = TaskwarriorApp(client=FakeUiClient(tasks=[]))
+    results: list[tuple[str, str] | None] = []
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        empty = ProjectDashboardScreen("Summary", [], set())
+        app.push_screen(empty, results.append)
+        await pilot.pause()
+
+        empty.action_inspect()
+        await pilot.pause()
+        assert app.screen is empty
+
+        empty.action_close()
+        await pilot.pause()
+
+        screen = ProjectDashboardScreen("Summary", [TASK], {TASK.uuid})
+        app.push_screen(screen, results.append)
+        await pilot.pause()
+        screen.action_auto_schedule()
+        await pilot.pause()
+
+    assert results == [None, ("auto_schedule", "")]
+
+
+@pytest.mark.parametrize(
+    ("action", "expected"),
+    [
+        ("inspect", "information"),
+        ("edit", "edit"),
+        ("planning", "planning"),
+        ("dependencies", "dependencies"),
+        ("start", "start"),
+        ("stop", "stop"),
+        ("done", "done"),
+    ],
+)
+async def test_project_cockpit_dispatches_actions_for_external_dependencies(
+    action: str,
+    expected: str,
+) -> None:
+    external = Task(
+        uuid="52525252-1111-1111-1111-111111111111",
+        description="External prerequisite",
+        status="pending",
+        project="Shared",
+        estimate_hours=1.0,
+    )
+    project_task = Task(
+        uuid="62626262-1111-1111-1111-111111111111",
+        description="Project task",
+        status="pending",
+        project="Infra",
+        depends=(external.uuid,),
+        estimate_hours=2.0,
+    )
+    client = FakeUiClient(tasks=[project_task])
+    client.expanded_tasks = [external, project_task]
+    app = TaskwarriorApp(
+        client=client,
+        planning_settings=PlanningSettings(timezone="UTC"),
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+o")
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, ProjectDashboardScreen)
+
+        screen.dismiss((action, external.uuid))
+        await pilot.pause()
+
+        if expected == "information":
+            assert ("information", external.short_uuid) in client.calls
+            assert "task information" in str(app.query_one("#details").render())
+        elif expected == "edit":
+            assert isinstance(app.screen, TaskForm)
+            assert app.screen.initial_task is external
+        elif expected == "planning":
+            assert isinstance(app.screen, PlanningForm)
+            assert app.screen.planned_task is external
+            assert project_task in app.screen.candidates
+        elif expected == "dependencies":
+            assert isinstance(app.screen, DependencyScreen)
+            body = str(app.screen.query_one("#dependency-body").render())
+            assert "Required by" in body
+            assert project_task.short_uuid in body
+        else:
+            assert (expected, external.short_uuid) in client.calls
+
+
+async def test_project_cockpit_dispatches_auto_schedule() -> None:
+    task = Task(
+        uuid="63636363-1111-1111-1111-111111111111",
+        description="Project task",
+        status="pending",
+        project="Infra",
+        estimate_hours=1.0,
+    )
+    client = FakeUiClient(tasks=[task])
+    client.expanded_tasks = [task]
+    app = TaskwarriorApp(client=client)
+    calls: list[str] = []
+    app.action_auto_schedule_project = lambda: calls.append("auto-schedule")
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+o")
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, ProjectDashboardScreen)
+
+        screen.dismiss(("auto_schedule", ""))
+        await pilot.pause()
+
+    assert calls == ["auto-schedule"]
 
 
 async def test_project_dashboard_uses_unprojected_scope() -> None:

@@ -149,17 +149,22 @@ dependency cycles and cycle-blocked tasks, unresolved dependencies, missing
 estimates, invalid `scheduled`/`due` values, projected deadline lateness and
 Timewarrior effort overruns.
 
-## Project dashboard
+## Project cockpit
 
-Press `O` on a selected task to open a consolidated dashboard for that task's
-project (or the unprojected scope). The dashboard keeps the current Taskwarrior
+Press `O` on a selected task to open the interactive cockpit for that task's
+project (or the unprojected scope). The cockpit keeps the current Taskwarrior
 view as its project scope, recursively expands external dependencies according to
 `dependency_depth`, and reads Timewarrior once for the expanded graph.
 
 It reports project-only task/effort totals, external dependency count, graph
 health, unresolved edges, remaining critical-path duration, the critical path,
-calendar finish and late-task count when a valid calendar anchor exists, plus a
-per-task table that distinguishes project tasks from external prerequisites.
+calendar finish and late-task count when a valid calendar anchor exists.
+
+The task table is directly actionable, including for external prerequisites:
+`Enter` inspects, `e` edits ordinary fields, `E` edits planning metadata,
+`g` opens dependencies, `s`/`x` start or stop work, `d` completes the
+task, and `S` opens the project's auto-schedule proposal. This makes the
+dashboard the main project-navigation surface rather than a read-only report.
 
 ## Persistent planning configuration
 
