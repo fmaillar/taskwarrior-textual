@@ -2071,11 +2071,12 @@ async def test_planning_form_cancel_returns_none_and_handles_no_candidates() -> 
         description="Target",
         status="pending",
     )
-    app = TaskwarriorApp(client=FakeUiClient(tasks=[target]))
+    client = FakeUiClient(tasks=[target])
+    app = TaskwarriorApp(client=client)
 
     async with app.run_test() as pilot:
         await pilot.pause()
-        app.push_screen(PlanningForm(target, [target]))
+        await pilot.press("shift+e")
         await pilot.pause()
 
         assert isinstance(app.screen, PlanningForm)
@@ -2086,6 +2087,7 @@ async def test_planning_form_cancel_returns_none_and_handles_no_candidates() -> 
         await pilot.pause()
 
         assert not isinstance(app.screen, PlanningForm)
+        assert ("modify_planning", target.short_uuid) not in client.calls
 
 
 async def test_planning_editor_noops_without_selected_task() -> None:
