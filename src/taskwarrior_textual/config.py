@@ -3,10 +3,28 @@
 from __future__ import annotations
 
 import itertools
+import os
+import tomllib
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+
+class ConfigError(ValueError):
+    """Invalid taskwarrior-textual configuration."""
+
+
+def default_config_path() -> Path:
+    """Return the configured or XDG-default TOML configuration path."""
+    override = os.environ.get("TASKWARRIOR_TEXTUAL_CONFIG")
+    if override:
+        return Path(override).expanduser()
+    root = Path(
+        os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")
+    ).expanduser()
+    return root / "taskwarrior-textual" / "config.toml"
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +118,93 @@ class PlanningSettings:
                 - datetime.combine(date.min, start, tzinfo=UTC)
             ).total_seconds()
         return total_seconds / 3600
+
+
+def load_planning_settings(path: Path | None = None) -> PlanningSettings:
+    """Load validated planning settings from TOML, or return defaults if absent."""
+    config_path = default_config_path() if path is None else Path(path)
+    if not config_path.exists():
+        return PlanningSettings()
+
+    try:
+        payload: Any = tomllib.loads(config_path.read_text())
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise ConfigError(f"invalid TOML configuration: {config_path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ConfigError("configuration root must be a TOML table")
+
+    planning = payload.get("planning", {})
+    if not isinstance(planning, dict):
+        raise ConfigError("planning must be a TOML table")
+
+    allowed = {
+        "timezone",
+        "workdays",
+        "work_periods",
+        "holidays",
+        "dependency_depth",
+        "capacity",
+    }
+    unknown = sorted(set(planning) - allowed)
+    if unknown:
+        raise ConfigError(f"unknown planning key: {unknown[0]}")
+
+    values: dict[str, Any] = {}
+    if "timezone" in planning:
+        timezone = planning["timezone"]
+        if not isinstance(timezone, str):
+            raise ConfigError("timezone must be a string")
+        values["timezone"] = timezone
+
+    if "workdays" in planning:
+        workdays = planning["workdays"]
+        if (
+            not isinstance(workdays, list)
+            or any(not isinstance(day, int) or isinstance(day, bool) for day in workdays)
+        ):
+            raise ConfigError("workdays must be an array of integers")
+        values["workdays"] = tuple(workdays)
+
+    if "work_periods" in planning:
+        work_periods = planning["work_periods"]
+        if not isinstance(work_periods, list):
+            raise ConfigError("work_periods must be an array of [start, end] pairs")
+        parsed_periods: list[tuple[str, str]] = []
+        for period in work_periods:
+            if (
+                not isinstance(period, list)
+                or len(period) != 2
+                or any(not isinstance(value, str) for value in period)
+            ):
+                raise ConfigError("work_periods must be an array of [start, end] pairs")
+            parsed_periods.append((period[0], period[1]))
+        values["work_periods"] = tuple(parsed_periods)
+
+    if "holidays" in planning:
+        holidays = planning["holidays"]
+        if (
+            not isinstance(holidays, list)
+            or any(not isinstance(value, str) for value in holidays)
+        ):
+            raise ConfigError("holidays must be an array of ISO date strings")
+        values["holidays"] = tuple(holidays)
+
+    if "dependency_depth" in planning:
+        depth = planning["dependency_depth"]
+        if not isinstance(depth, int) or isinstance(depth, bool):
+            raise ConfigError("dependency_depth must be an integer")
+        values["dependency_depth"] = depth
+
+    if "capacity" in planning:
+        capacity = planning["capacity"]
+        if not isinstance(capacity, int) or isinstance(capacity, bool):
+            raise ConfigError("capacity must be an integer")
+        values["capacity"] = capacity
+
+    try:
+        return PlanningSettings(**values)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
 
 
 @dataclass(frozen=True, slots=True)
