@@ -4,6 +4,7 @@ from textual.widgets import Button, Input
 
 from taskwarrior_textual import app as app_module
 from taskwarrior_textual.app import (
+    CalendarPlanScreen,
     ConfirmDelete,
     CriticalPathScreen,
     DependencyOverviewScreen,
@@ -641,6 +642,155 @@ async def test_gantt_key_opens_local_screen_without_refetch() -> None:
         await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(app.screen, GanttScreen)
+
+
+def test_planning_datetime_parses_taskwarrior_utc_and_rejects_unknown() -> None:
+    assert TaskwarriorApp._planning_datetime("") is None
+    assert TaskwarriorApp._planning_datetime("tomorrow") is None
+    parsed = TaskwarriorApp._planning_datetime("20260924T090000Z")
+    assert parsed is not None
+    assert parsed.strftime("%Y-%m-%d %H:%M") == "2026-09-24 09:00"
+
+
+def test_calendar_plan_respects_dependencies_scheduled_constraints_and_due() -> None:
+    first = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Foundation",
+        status="pending",
+        scheduled="20260924T090000Z",
+        due="20260924T000000Z",
+        estimate_hours=2.0,
+    )
+    delayed = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="Delayed branch",
+        status="pending",
+        scheduled="20260924T150000Z",
+        due="20260924T160000Z",
+        depends=(first.uuid,),
+        estimate_hours=3.0,
+    )
+    normal = Task(
+        uuid="33333333-3333-3333-3333-333333333333",
+        description="Normal branch",
+        status="pending",
+        depends=(first.uuid,),
+        estimate_hours=1.0,
+    )
+
+    summary = TaskwarriorApp._calendar_plan([delayed, normal, first])
+
+    assert (
+        "Calendar origin: 2026-09-24 09:00 UTC | "
+        "Project finish: 2026-09-24 18:00 UTC"
+    ) in summary
+    assert (
+        "11111111 | 2026-09-24 09:00 -> 2026-09-24 11:00 | "
+        "2026-09-24 | on time | Foundation"
+    ) in summary
+    assert (
+        "33333333 | 2026-09-24 11:00 -> 2026-09-24 12:00 | "
+        "- | - | Normal branch"
+    ) in summary
+    assert (
+        "22222222 | 2026-09-24 15:00 -> 2026-09-24 18:00 | "
+        "2026-09-24 16:00 | LATE +2.00h | Delayed branch"
+    ) in summary
+    assert "Late tasks: 1" in summary
+
+
+def test_calendar_plan_reports_unestimated_unresolved_and_invalid_due() -> None:
+    first = Task(
+        uuid="aaaaaaaa-1111-2222-3333-444444444444",
+        description="Anchor",
+        status="pending",
+        scheduled="20260924T080000Z",
+    )
+    second = Task(
+        uuid="bbbbbbbb-1111-2222-3333-444444444444",
+        description="External",
+        status="pending",
+        depends=(first.uuid, "99999999-aaaa-bbbb-cccc-dddddddddddd"),
+        due="not-a-date",
+        estimate_hours=1.0,
+    )
+
+    summary = TaskwarriorApp._calendar_plan([second, first])
+
+    assert "Unestimated tasks treated as 0h: aaaaaaaa" in summary
+    assert "Unresolved dependencies ignored: bbbbbbbb -> 99999999" in summary
+    assert "Invalid due dates ignored: bbbbbbbb" in summary
+    assert "Late tasks: 0" in summary
+
+
+def test_calendar_plan_requires_anchor_and_refuses_cycles() -> None:
+    no_anchor = Task(
+        uuid="aaaaaaaa-1111-2222-3333-444444444444",
+        description="No anchor",
+        status="pending",
+        estimate_hours=1.0,
+    )
+    assert (
+        TaskwarriorApp._calendar_plan([no_anchor])
+        == "Calendar plan unavailable: no valid scheduled date in current view."
+    )
+    assert TaskwarriorApp._calendar_plan([]) == "No tasks in current view."
+
+    first = Task(
+        uuid="bbbbbbbb-1111-2222-3333-444444444444",
+        description="First",
+        status="pending",
+        scheduled="20260924T080000Z",
+        depends=("cccccccc-1111-2222-3333-444444444444",),
+        estimate_hours=1.0,
+    )
+    second = Task(
+        uuid="cccccccc-1111-2222-3333-444444444444",
+        description="Second",
+        status="pending",
+        depends=(first.uuid,),
+        estimate_hours=1.0,
+    )
+    assert (
+        TaskwarriorApp._calendar_plan([first, second])
+        == "Calendar plan unavailable: dependency cycle detected."
+    )
+
+
+async def test_calendar_plan_key_opens_local_screen_without_refetch() -> None:
+    first = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="First",
+        status="pending",
+        scheduled="20260924T090000Z",
+        estimate_hours=2.0,
+    )
+    second = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="Second",
+        status="pending",
+        depends=(first.uuid,),
+        estimate_hours=3.0,
+    )
+    client = FakeUiClient(tasks=[second, first])
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial_view_calls = client.calls.count(("view", "pending"))
+
+        await pilot.press("shift+l")
+        await pilot.pause()
+
+        assert isinstance(app.screen, CalendarPlanScreen)
+        body = str(app.screen.query_one("#calendar-plan-body").render())
+        assert "Calendar origin: 2026-09-24 09:00 UTC" in body
+        assert "Project finish: 2026-09-24 14:00 UTC" in body
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, CalendarPlanScreen)
 
 
 def test_project_overview_groups_current_view_deterministically() -> None:
