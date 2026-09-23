@@ -82,19 +82,48 @@ class TaskwarriorClient:
         return self._run([uuid_prefix])
 
     @staticmethod
+    def _parse_list(value: str) -> tuple[str, ...]:
+        """Parse a comma-separated field, trimming and deduplicating entries."""
+        return tuple(dict.fromkeys(part.strip() for part in value.split(",") if part.strip()))
+
+    @classmethod
     def _attributes(
+        cls,
         *,
         project: str = "",
         priority: str = "",
         due: str = "",
+        wait: str = "",
+        scheduled: str = "",
+        depends: str = "",
         include_empty: bool = False,
     ) -> list[str]:
-        values = {"project": project, "priority": priority, "due": due}
+        values = {
+            "project": project,
+            "priority": priority,
+            "due": due,
+            "wait": wait,
+            "scheduled": scheduled,
+            "depends": ",".join(cls._parse_list(depends)),
+        }
         return [
             f"{name}:{value}"
             for name, value in values.items()
             if include_empty or value
         ]
+
+    @classmethod
+    def _tag_modifications(
+        cls,
+        tags: str,
+        previous_tags: Sequence[str] = (),
+    ) -> list[str]:
+        """Return the minimal Taskwarrior +/- tag changes for a replacement set."""
+        desired = cls._parse_list(tags)
+        previous = tuple(dict.fromkeys(previous_tags))
+        removed = [f"-{tag}" for tag in previous if tag not in desired]
+        added = [f"+{tag}" for tag in desired if tag not in previous]
+        return [*removed, *added]
 
     def add(
         self,
@@ -103,13 +132,25 @@ class TaskwarriorClient:
         project: str = "",
         priority: str = "",
         due: str = "",
+        tags: str = "",
+        wait: str = "",
+        scheduled: str = "",
+        depends: str = "",
     ) -> str:
         """Create a task and return Taskwarrior's response."""
         return self._run(
             [
                 "add",
                 description,
-                *self._attributes(project=project, priority=priority, due=due),
+                *self._attributes(
+                    project=project,
+                    priority=priority,
+                    due=due,
+                    wait=wait,
+                    scheduled=scheduled,
+                    depends=depends,
+                ),
+                *self._tag_modifications(tags),
             ]
         )
 
@@ -121,8 +162,13 @@ class TaskwarriorClient:
         project: str = "",
         priority: str = "",
         due: str = "",
+        tags: str = "",
+        previous_tags: Sequence[str] = (),
+        wait: str = "",
+        scheduled: str = "",
+        depends: str = "",
     ) -> str:
-        """Replace the main editable fields of a task."""
+        """Replace the editable fields of a task."""
         return self._run(
             [
                 uuid_prefix,
@@ -132,8 +178,12 @@ class TaskwarriorClient:
                     project=project,
                     priority=priority,
                     due=due,
+                    wait=wait,
+                    scheduled=scheduled,
+                    depends=depends,
                     include_empty=True,
                 ),
+                *self._tag_modifications(tags, previous_tags),
             ]
         )
 
