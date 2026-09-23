@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
 
 from typing import ClassVar
 
@@ -20,7 +20,7 @@ from .planning import (
     parse_taskwarrior_datetime,
     remaining_estimate_hours,
 )
-from .taskwarrior import TaskwarriorClient, TaskwarriorError
+from .taskwarrior import TaskwarriorClient, TaskwarriorError, TimewarriorInterval
 
 
 class TaskForm(ModalScreen[dict[str, str] | None]):
@@ -517,6 +517,37 @@ class TimewarriorReportScreen(ModalScreen[None]):
         self.dismiss(None)
 
 
+class TimewarriorTrendScreen(ModalScreen[None]):
+    """Read-only seven-day Timewarrior trend report."""
+
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [("escape", "close", "Close")]
+
+    CSS = """
+    TimewarriorTrendScreen { align: center middle; }
+    #timewarrior-trend-box {
+        width: 90%;
+        max-width: 120;
+        height: auto;
+        max-height: 90%;
+        padding: 1 2;
+        border: round $accent;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, body: str) -> None:
+        super().__init__()
+        self.body = body
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="timewarrior-trend-box"):
+            yield Label("Timewarrior 7-day trend")
+            yield Static(self.body, id="timewarrior-trend-body")
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 class ConfirmDelete(ModalScreen[bool]):
     """Confirm deletion of a task."""
 
@@ -583,6 +614,7 @@ class TaskwarriorApp(App[None]):
         ("shift+m", "show_milestones", "Milestones"),
         ("shift+p", "show_project_overview", "Projects"),
         ("shift+t", "show_timewarrior_report", "Timewarrior"),
+        ("shift+r", "show_timewarrior_trend", "Trend"),
         ("f", "filter_tag", "Tag"),
         ("v", "toggle_active", "Active"),
         ("c", "clear_local_state", "Clear"),
@@ -1313,6 +1345,89 @@ class TaskwarriorApp(App[None]):
         return "\n".join(lines)
 
     @staticmethod
+    def _timewarrior_trend(
+        tasks: list[Task],
+        intervals: tuple[TimewarriorInterval, ...],
+        settings: PlanningSettings | None = None,
+        *,
+        now: datetime | None = None,
+        days: int = 7,
+    ) -> str:
+        """Summarize matched Timewarrior effort by local day and project."""
+        if days <= 0:
+            raise ValueError("days must be a positive integer")
+
+        resolved_settings = settings or PlanningSettings()
+        resolved_now = now or datetime.now(UTC)
+        zone = WorkingCalendar(resolved_settings).timezone
+        local_today = resolved_now.astimezone(zone).date()
+        first_day = local_today - timedelta(days=days - 1)
+        window_start = datetime.combine(first_day, time.min, tzinfo=zone).astimezone(UTC)
+        window_end = datetime.combine(
+            local_today + timedelta(days=1),
+            time.min,
+            tzinfo=zone,
+        ).astimezone(UTC)
+
+        by_uuid = {task.uuid: task for task in tasks}
+        daily = {
+            first_day + timedelta(days=offset): 0.0
+            for offset in range(days)
+        }
+        projects: dict[str, float] = {}
+
+        for interval in intervals:
+            task = by_uuid.get(interval.task_uuid)
+            if task is None:
+                continue
+            start = max(interval.start, window_start)
+            end = min(interval.end, window_end)
+            if end <= start:
+                continue
+
+            tracked_hours = (end - start).total_seconds() / 3600
+            project = task.project or "(none)"
+            projects[project] = projects.get(project, 0.0) + tracked_hours
+
+            cursor = start
+            while cursor < end:
+                local_day = cursor.astimezone(zone).date()
+                next_midnight = datetime.combine(
+                    local_day + timedelta(days=1),
+                    time.min,
+                    tzinfo=zone,
+                ).astimezone(UTC)
+                segment_end = min(end, next_midnight)
+                daily[local_day] += (segment_end - cursor).total_seconds() / 3600
+                cursor = segment_end
+
+        total = sum(daily.values())
+        lines = [
+            (
+                f"Last {days} local days through {local_today.isoformat()} "
+                f"({resolved_settings.timezone})"
+            ),
+            f"Tracked in window: {total:.2f}h",
+            "",
+            "Daily",
+            "Date | Tracked",
+        ]
+        lines.extend(
+            f"{day.isoformat()} | {daily[day]:.2f}h"
+            for day in sorted(daily)
+        )
+        lines.extend(["", "Projects", "Project | Tracked"])
+        lines.extend(
+            f"{project} | {hours:.2f}h"
+            for project, hours in sorted(
+                projects.items(),
+                key=lambda item: (-item[1], item[0].casefold()),
+            )
+            if hours > 0
+        )
+        return "\n".join(lines)
+
+    @staticmethod
     def _timewarrior_report(
         tasks: list[Task],
         settings: PlanningSettings | None = None,
@@ -1696,6 +1811,28 @@ class TaskwarriorApp(App[None]):
     def action_show_milestones(self) -> None:
         """Show explicit zero-duration milestones for the current view."""
         self.push_screen(MilestonesScreen(self._milestones_summary(self.view_tasks)))
+
+    def action_show_timewarrior_trend(self) -> None:
+        """Show a seven-day Timewarrior trend for the current view."""
+        now = datetime.now(UTC)
+        try:
+            intervals = self.client.timewarrior_intervals(
+                self.view_tasks,
+                now=now,
+            )
+        except TaskwarriorError as exc:
+            self._show_error(exc)
+            return
+        self.push_screen(
+            TimewarriorTrendScreen(
+                self._timewarrior_trend(
+                    self.view_tasks,
+                    intervals,
+                    self.planning_settings,
+                    now=now,
+                )
+            )
+        )
 
     def action_show_timewarrior_report(self) -> None:
         """Show tracked effort and remaining work for the current view."""
