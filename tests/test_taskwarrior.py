@@ -421,8 +421,6 @@ def test_modify_planning_without_estimate_uda_leaves_estimate_unmodified_when_em
         [
             "12345678",
             "modify",
-            "project:",
-            "priority:",
             "due:2026-10-01",
             "wait:",
             "scheduled:",
