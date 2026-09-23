@@ -789,6 +789,25 @@ def test_planning_datetime_parses_taskwarrior_utc_and_rejects_unknown() -> None:
     assert parsed.strftime("%Y-%m-%d %H:%M") == "2026-09-24 09:00"
 
 
+def test_gantt_breaks_same_start_short_uuid_ties_with_full_uuid() -> None:
+    first = Task(
+        uuid="aaaaaaaa-0000-0000-0000-000000000001",
+        description="First collision",
+        status="pending",
+        estimate_hours=1.0,
+    )
+    second = Task(
+        uuid="aaaaaaaa-0000-0000-0000-000000000002",
+        description="Second collision",
+        status="pending",
+        estimate_hours=1.0,
+    )
+
+    summary = TaskwarriorApp._gantt_summary([second, first])
+
+    assert summary.index("First collision") < summary.index("Second collision")
+
+
 def test_calendar_plan_respects_dependencies_scheduled_constraints_and_due() -> None:
     first = Task(
         uuid="11111111-1111-1111-1111-111111111111",
@@ -1574,6 +1593,32 @@ def test_search_matches_description_project_and_tags_case_insensitively() -> Non
     assert TaskwarriorApp._matches_search(SEARCH_TASKS[1], "infra") is True
     assert TaskwarriorApp._matches_search(SEARCH_TASKS[1], "MAIL") is True
     assert TaskwarriorApp._matches_search(SEARCH_TASKS[2], "database") is False
+
+
+@pytest.mark.parametrize("sort_key", ["urgency", "when", "project", "priority"])
+def test_sort_cycle_breaks_short_uuid_ties_with_full_uuid(sort_key: str) -> None:
+    first = Task(
+        uuid="aaaaaaaa-0000-0000-0000-000000000001",
+        description="First collision",
+        status="pending",
+        urgency=1.0,
+        due="20260925T080000Z",
+        project="same",
+        priority="M",
+    )
+    second = Task(
+        uuid="aaaaaaaa-0000-0000-0000-000000000002",
+        description="Second collision",
+        status="pending",
+        urgency=1.0,
+        due="20260925T080000Z",
+        project="same",
+        priority="M",
+    )
+
+    ordered = TaskwarriorApp._sort_tasks([second, first], sort_key)
+
+    assert [task.uuid for task in ordered] == [first.uuid, second.uuid]
 
 
 def test_sort_cycle_is_deterministic() -> None:
