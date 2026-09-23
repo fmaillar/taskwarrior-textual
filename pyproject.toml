@@ -13,7 +13,11 @@ authors = [{ name = "Florian Maillar" }]
 dependencies = ["textual>=0.70"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = [
+  "pytest>=8",
+  "pytest-asyncio>=0.24",
+  "ruff>=0.6",
+]
 
 [project.scripts]
 taskwarrior-textual = "taskwarrior_textual.__main__:main"
@@ -24,6 +28,7 @@ packages = ["src/taskwarrior_textual"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [tool.ruff]
 target-version = "py311"
