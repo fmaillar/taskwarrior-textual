@@ -5,23 +5,25 @@ configfile: pyproject.toml
 testpaths: tests
 plugins: asyncio-1.4.0, cov-7.1.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collected 59 items
+collected 66 items
 
-tests/test_app.py .............................                          [ 49%]
-tests/test_main.py ..                                                    [ 52%]
-tests/test_models.py ......                                              [ 62%]
+tests/test_app.py ....................................                   [ 54%]
+tests/test_main.py ..                                                    [ 57%]
+tests/test_models.py ......                                              [ 66%]
 tests/test_taskwarrior.py ......................                         [100%]
 
 - generated xml file: /home/fgm/projets/taskwarrior-textual/reports/junit.xml --
 ================================ tests coverage ================================
 _______________ coverage: platform linux, python 3.13.5-final-0 ________________
 
-Name    Stmts   Miss Branch BrPart  Cover   Missing
----------------------------------------------------
-TOTAL     326      0     42      0   100%
+Name                             Stmts   Miss Branch BrPart  Cover   Missing
+----------------------------------------------------------------------------
+src/taskwarrior_textual/app.py     246      2     40      2    99%   280, 282
+----------------------------------------------------------------------------
+TOTAL                              382      2     54      2    99%
 
-5 files skipped due to complete coverage.
+4 files skipped due to complete coverage.
 Coverage HTML written to dir htmlcov
 Coverage XML written to file reports/coverage.xml
-Required test coverage of 95.0% reached. Total coverage: 100.00%
-============================= 59 passed in 16.59s ==============================
+Required test coverage of 95.0% reached. Total coverage: 99.08%
+============================= 66 passed in 22.29s ==============================
