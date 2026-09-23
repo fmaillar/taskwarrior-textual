@@ -10,6 +10,7 @@ import shutil
 import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from .models import Task
@@ -33,6 +34,7 @@ class TaskwarriorClient:
     """Thin adapter around the public Taskwarrior CLI."""
 
     command: str | None = None
+    timewarrior_command: str | None = None
     _udas_cache: frozenset[str] | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -42,6 +44,10 @@ class TaskwarriorClient:
             raise TaskwarriorError(
                 "Taskwarrior executable not found. Put 'task' in PATH or set "
                 "TASKWARRIOR_COMMAND."
+            )
+        if self.timewarrior_command is None:
+            self.timewarrior_command = (
+                os.environ.get("TIMEWARRIOR_COMMAND") or shutil.which("timew")
             )
 
     def _run(self, args: Sequence[str]) -> str:
@@ -57,6 +63,83 @@ class TaskwarriorClient:
                 f"{shlex.join(command)} failed with status {completed.returncode}: {message}"
             )
         return completed.stdout
+
+    def _run_timewarrior(self, args: Sequence[str]) -> str:
+        if not self.timewarrior_command:
+            raise TaskwarriorError("Timewarrior executable not found")
+        command = [self.timewarrior_command, *args]
+        try:
+            completed = subprocess.run(command, check=False, capture_output=True, text=True)
+        except OSError as exc:
+            raise TaskwarriorError(f"Cannot execute {shlex.join(command)}: {exc}") from exc
+
+        if completed.returncode != 0:
+            message = completed.stderr.strip() or completed.stdout.strip()
+            raise TaskwarriorError(
+                f"{shlex.join(command)} failed with status {completed.returncode}: {message}"
+            )
+        return completed.stdout
+
+    @staticmethod
+    def _timewarrior_signature(task: Task) -> frozenset[str]:
+        tags = {task.description, *task.tags}
+        if task.project:
+            tags.add(task.project)
+        return frozenset(tags)
+
+    def timewarrior_hours(
+        self,
+        tasks: list[Task],
+        *,
+        now: datetime | None = None,
+    ) -> dict[str, float]:
+        """Return tracked hours matched unambiguously to Taskwarrior tasks."""
+        if not self.timewarrior_command:
+            return {}
+
+        raw = self._run_timewarrior(["export"])
+        try:
+            payload: Any = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise TaskwarriorError("Timewarrior returned invalid JSON") from exc
+        if not isinstance(payload, list):
+            raise TaskwarriorError("Timewarrior export did not return a JSON array")
+
+        by_signature: dict[frozenset[str], list[Task]] = {}
+        for task in tasks:
+            by_signature.setdefault(self._timewarrior_signature(task), []).append(task)
+        unique = {
+            signature: matches[0]
+            for signature, matches in by_signature.items()
+            if len(matches) == 1
+        }
+
+        resolved_now = now or datetime.now(UTC)
+        totals: dict[str, float] = {}
+        for interval in payload:
+            if not isinstance(interval, dict):
+                continue
+            tags = interval.get("tags")
+            start_text = interval.get("start")
+            if not isinstance(tags, list) or not isinstance(start_text, str):
+                continue
+            task = unique.get(frozenset(str(tag) for tag in tags))
+            if task is None:
+                continue
+            try:
+                start = datetime.strptime(start_text, "%Y%m%dT%H%M%S%z")
+                end_text = interval.get("end")
+                end = (
+                    datetime.strptime(end_text, "%Y%m%dT%H%M%S%z")
+                    if isinstance(end_text, str)
+                    else resolved_now
+                )
+            except ValueError:
+                continue
+            seconds = max(0.0, (end - start).total_seconds())
+            totals[task.uuid] = totals.get(task.uuid, 0.0) + seconds / 3600
+
+        return totals
 
     def export(self, *filters: str) -> list[Task]:
         """Return tasks matching Taskwarrior filters."""
