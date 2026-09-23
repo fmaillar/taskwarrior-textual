@@ -89,11 +89,16 @@ make report
 
 This writes compact, Git-friendly artifacts to `reports/`:
 
+- `ruff.txt`: Ruff output
+- `ruff-exit-status.txt`: Ruff exit status
 - `pytest.txt`: human-readable pytest and coverage output
 - `junit.xml`: machine-readable test results
 - `coverage.xml`: Cobertura coverage report
 - `coverage.json`: detailed coverage data
 - `pytest-exit-status.txt`: pytest exit status
+
+The reported quality gate now runs Ruff before pytest, so the normal report workflow
+checks both lint and branch-aware test coverage.
 
 To generate, commit and push those reports in one command:
 
