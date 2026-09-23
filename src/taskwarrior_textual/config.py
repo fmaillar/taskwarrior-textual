@@ -66,7 +66,7 @@ class PlanningSettings:
     def _validate_work_periods(self) -> None:
         if not self.work_periods:
             raise ValueError("work periods must not be empty")
-        parsed: list[tuple[datetime, datetime]] = []
+        parsed: list[tuple[time, time]] = []
         for start_text, end_text in self.work_periods:
             start = self._parse_clock(start_text)
             end = self._parse_clock(end_text)
@@ -98,7 +98,6 @@ class PlanningSettings:
                 - datetime.combine(date.min, start, tzinfo=UTC)
             ).total_seconds()
         return total_seconds / 3600
-
 
 
 @dataclass(frozen=True, slots=True)
