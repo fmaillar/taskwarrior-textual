@@ -139,6 +139,46 @@ class SearchForm(ModalScreen[str]):
         self.dismiss("")
 
 
+class ProjectFilterForm(ModalScreen[str]):
+    """Modal exact project filter over the currently loaded view."""
+
+    BINDINGS = [("escape", "clear_filter", "Clear project filter")]
+
+    CSS = """
+    ProjectFilterForm { align: center top; padding-top: 3; }
+    #project-filter-box {
+        width: 70%;
+        max-width: 80;
+        height: auto;
+        padding: 1 2;
+        border: round $accent;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, initial_project: str = "") -> None:
+        super().__init__()
+        self.initial_project = initial_project
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="project-filter-box"):
+            yield Label("Filter by exact project")
+            yield Input(
+                value=self.initial_project,
+                placeholder="Project (empty clears filter)",
+                id="project-filter",
+            )
+
+    def on_mount(self) -> None:
+        self.query_one("#project-filter", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value.strip())
+
+    def action_clear_filter(self) -> None:
+        self.dismiss("")
+
+
 class ConfirmDelete(ModalScreen[bool]):
     """Confirm deletion of a task."""
 
@@ -193,6 +233,8 @@ class TaskwarriorApp(App[None]):
         ("4", "view_deleted", "Deleted"),
         ("/", "search_tasks", "Search"),
         ("t", "cycle_sort", "Sort"),
+        ("p", "filter_project", "Project"),
+        ("b", "toggle_blocked", "Blocked"),
     ]
 
     SORT_CYCLE = (None, "urgency", "when", "project", "priority")
@@ -209,6 +251,8 @@ class TaskwarriorApp(App[None]):
         self.view_tasks: list[Task] = []
         self.current_view = "pending"
         self.search_query = ""
+        self.project_filter = ""
+        self.blocked_only = False
         self.sort_key: str | None = None
 
     def compose(self) -> ComposeResult:
@@ -223,6 +267,7 @@ class TaskwarriorApp(App[None]):
         table.add_columns(
             "UUID",
             "A",
+            "B",
             "P",
             "Project",
             "When",
@@ -245,6 +290,7 @@ class TaskwarriorApp(App[None]):
         return (
             task.short_uuid,
             "▶" if task.active else "",
+            "◆" if task.depends else "",
             task.priority,
             task.project,
             when,
@@ -261,6 +307,13 @@ class TaskwarriorApp(App[None]):
             (task.description, task.project, " ".join(task.tags))
         ).casefold()
         return needle in haystack
+
+    @staticmethod
+    def _matches_project(task: Task, project: str) -> bool:
+        """Match an exact project filter, case-insensitively."""
+        if not project:
+            return True
+        return task.project.casefold() == project.casefold()
 
     @classmethod
     def _sort_tasks(
@@ -315,6 +368,8 @@ class TaskwarriorApp(App[None]):
             task
             for task in self.view_tasks
             if self._matches_search(task, self.search_query)
+            and self._matches_project(task, self.project_filter)
+            and (not self.blocked_only or bool(task.depends))
         ]
         visible = self._sort_tasks(visible, self.sort_key, self.current_view)
 
@@ -325,13 +380,25 @@ class TaskwarriorApp(App[None]):
                 key=task.short_uuid,
             )
 
-        details.update(
-            f"{len(visible)}/{len(self.view_tasks)} {self.current_view} task(s)."
-        )
+        state = [f"{len(visible)}/{len(self.view_tasks)} {self.current_view} task(s)"]
+        if self.search_query:
+            state.append(f"search={self.search_query}")
+        if self.project_filter:
+            state.append(f"project={self.project_filter}")
+        if self.blocked_only:
+            state.append("blocked")
+        if self.sort_key:
+            state.append(f"sort={self.sort_key}")
+        details.update(" | ".join(state) + ".")
 
     def _apply_search(self, query: str) -> None:
         """Apply a local search without querying Taskwarrior again."""
         self.search_query = query.strip()
+        self._render_tasks()
+
+    def _apply_project_filter(self, project: str) -> None:
+        """Apply an exact local project filter without refetching."""
+        self.project_filter = project.strip()
         self._render_tasks()
 
     def _selected_task(self) -> Task | None:
@@ -392,6 +459,18 @@ class TaskwarriorApp(App[None]):
         """Cycle through deterministic local sort modes."""
         index = self.SORT_CYCLE.index(self.sort_key)
         self.sort_key = self.SORT_CYCLE[(index + 1) % len(self.SORT_CYCLE)]
+        self._render_tasks()
+
+    def action_filter_project(self) -> None:
+        """Open an exact local project filter."""
+        self.push_screen(
+            ProjectFilterForm(self.project_filter),
+            self._apply_project_filter,
+        )
+
+    def action_toggle_blocked(self) -> None:
+        """Toggle a local filter for tasks with unresolved dependencies."""
+        self.blocked_only = not self.blocked_only
         self._render_tasks()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
