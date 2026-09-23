@@ -1,8 +1,97 @@
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
-from taskwarrior_textual.config import PlanningSettings, WorkingCalendar
+from taskwarrior_textual.config import (
+    ConfigError,
+    PlanningSettings,
+    WorkingCalendar,
+    default_config_path,
+    load_planning_settings,
+)
+
+
+def test_default_config_path_uses_explicit_env_override(monkeypatch, tmp_path: Path) -> None:
+    path = tmp_path / "custom.toml"
+    monkeypatch.setenv("TASKWARRIOR_TEXTUAL_CONFIG", str(path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    assert default_config_path() == path
+
+
+def test_default_config_path_uses_xdg_config_home(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("TASKWARRIOR_TEXTUAL_CONFIG", raising=False)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+    assert default_config_path() == tmp_path / "taskwarrior-textual" / "config.toml"
+
+
+def test_load_planning_settings_returns_defaults_when_config_missing(tmp_path: Path) -> None:
+    assert load_planning_settings(tmp_path / "missing.toml") == PlanningSettings()
+
+
+def test_load_planning_settings_reads_planning_table(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[planning]
+timezone = "Europe/Paris"
+workdays = [0, 1, 2, 3]
+work_periods = [["07:30", "12:00"], ["13:00", "16:30"]]
+holidays = ["2026-12-25"]
+dependency_depth = -1
+capacity = 2
+""".strip()
+    )
+
+    settings = load_planning_settings(path)
+
+    assert settings == PlanningSettings(
+        timezone="Europe/Paris",
+        workdays=(0, 1, 2, 3),
+        work_periods=(("07:30", "12:00"), ("13:00", "16:30")),
+        holidays=("2026-12-25",),
+        dependency_depth=-1,
+        capacity=2,
+    )
+
+
+def test_load_planning_settings_accepts_partial_planning_table(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('[planning]\ntimezone = "UTC"\n')
+
+    settings = load_planning_settings(path)
+
+    assert settings.timezone == "UTC"
+    assert settings.workdays == PlanningSettings().workdays
+    assert settings.capacity is None
+
+
+@pytest.mark.parametrize(
+    "content, message",
+    [
+        ("not = [valid", "TOML"),
+        ('planning = "wrong"', "planning"),
+        ('[planning]\nunknown = 1', "unknown planning key"),
+        ('[planning]\nworkdays = "0,1,2"', "workdays"),
+        ('[planning]\nwork_periods = ["08:00-12:00"]', "work_periods"),
+        ('[planning]\nholidays = [1]', "holidays"),
+        ('[planning]\ndependency_depth = "ten"', "dependency_depth"),
+        ('[planning]\ncapacity = "two"', "capacity"),
+        ('[planning]\ntimezone = "Mars/Olympus"', "timezone"),
+    ],
+)
+def test_load_planning_settings_rejects_invalid_config(
+    tmp_path: Path,
+    content: str,
+    message: str,
+) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(content)
+
+    with pytest.raises(ConfigError, match=message):
+        load_planning_settings(path)
 
 
 def test_planning_settings_defaults_match_defined_global_semantics() -> None:
