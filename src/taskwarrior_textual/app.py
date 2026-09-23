@@ -2725,7 +2725,7 @@ class TaskwarriorApp(App[None]):
         )
 
         def apply(confirmed: bool) -> None:
-            if not confirmed or not changes:
+            if not confirmed:
                 return
             try:
                 for task in sorted(
