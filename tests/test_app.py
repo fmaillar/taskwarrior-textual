@@ -3,7 +3,13 @@ from __future__ import annotations
 from textual.widgets import Button, Input
 
 from taskwarrior_textual import app as app_module
-from taskwarrior_textual.app import ConfirmDelete, SearchForm, TaskForm, TaskwarriorApp
+from taskwarrior_textual.app import (
+    ConfirmDelete,
+    ProjectFilterForm,
+    SearchForm,
+    TaskForm,
+    TaskwarriorApp,
+)
 from taskwarrior_textual.models import Task
 from taskwarrior_textual.taskwarrior import TaskwarriorError
 
@@ -45,6 +51,7 @@ SEARCH_TASKS = [
         due="20260925T000000Z",
         urgency=12.0,
         tags=("mail", "server"),
+        depends=("aaaaaaaa-1111-2222-3333-444444444444",),
     ),
     Task(
         uuid="cccccccc-1111-2222-3333-444444444444",
@@ -144,6 +151,7 @@ def test_task_row_shows_active_marker_tags_and_due_in_pending_view() -> None:
     assert row == (
         TASK.short_uuid,
         "▶",
+        "◆",
         "L",
         "",
         "2026-09-26",
@@ -163,9 +171,9 @@ def test_task_row_uses_view_specific_date() -> None:
         tags=("history",),
     )
 
-    assert TaskwarriorApp._task_row(task, "waiting")[4] == "2026-09-24 08:00"
-    assert TaskwarriorApp._task_row(task, "completed")[4] == "2026-09-25 17:00"
-    assert TaskwarriorApp._task_row(task, "deleted")[4] == "2026-09-25 17:00"
+    assert TaskwarriorApp._task_row(task, "waiting")[5] == "2026-09-24 08:00"
+    assert TaskwarriorApp._task_row(task, "completed")[5] == "2026-09-25 17:00"
+    assert TaskwarriorApp._task_row(task, "deleted")[5] == "2026-09-25 17:00"
 
 
 def test_task_row_has_no_active_marker_for_inactive_task() -> None:
@@ -175,7 +183,9 @@ def test_task_row_has_no_active_marker_for_inactive_task() -> None:
         status="pending",
     )
 
-    assert TaskwarriorApp._task_row(task, "pending")[1] == ""
+    row = TaskwarriorApp._task_row(task, "pending")
+    assert row[1] == ""
+    assert row[2] == ""
 
 
 async def test_table_uses_enriched_row_shape() -> None:
@@ -630,6 +640,94 @@ async def test_sort_key_cycles_locally_without_refetch() -> None:
             await pilot.pause()
             assert app.sort_key == sort_key
         assert client.calls.count(("view", "pending")) == initial_view_calls
+
+
+
+def test_dependency_marker_reflects_unresolved_dependencies() -> None:
+    blocked = SEARCH_TASKS[1]
+    ready = SEARCH_TASKS[0]
+
+    assert TaskwarriorApp._task_row(blocked, "pending")[2] == "◆"
+    assert TaskwarriorApp._task_row(ready, "pending")[2] == ""
+
+
+def test_project_filter_is_exact_and_case_insensitive() -> None:
+    assert TaskwarriorApp._matches_project(SEARCH_TASKS[1], "infra") is True
+    assert TaskwarriorApp._matches_project(SEARCH_TASKS[1], "INFRA") is True
+    assert TaskwarriorApp._matches_project(SEARCH_TASKS[1], "inf") is False
+    assert TaskwarriorApp._matches_project(SEARCH_TASKS[2], "") is True
+
+
+async def test_blocked_filter_toggles_locally_without_refetch() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial_view_calls = client.calls.count(("view", "pending"))
+
+        await pilot.press("b")
+        await pilot.pause()
+        assert app.blocked_only is True
+        assert app.query_one("#tasks").row_count == 1
+        assert app._selected_task() == SEARCH_TASKS[1]
+
+        await pilot.press("b")
+        await pilot.pause()
+        assert app.blocked_only is False
+        assert app.query_one("#tasks").row_count == 3
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+
+
+async def test_project_filter_form_applies_and_clears_locally() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial_view_calls = client.calls.count(("view", "pending"))
+
+        await pilot.press("p")
+        await pilot.pause()
+        assert isinstance(app.screen, ProjectFilterForm)
+        project = app.screen.query_one("#project-filter", Input)
+        project.value = "infra"
+        app.screen.on_input_submitted(Input.Submitted(project, project.value))
+        await pilot.pause()
+
+        assert app.project_filter == "infra"
+        assert app.query_one("#tasks").row_count == 1
+        assert app._selected_task() == SEARCH_TASKS[1]
+
+        await pilot.press("p")
+        await pilot.pause()
+        project = app.screen.query_one("#project-filter", Input)
+        project.value = ""
+        app.screen.on_input_submitted(Input.Submitted(project, project.value))
+        await pilot.pause()
+
+        assert app.project_filter == ""
+        assert app.query_one("#tasks").row_count == 3
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+
+
+async def test_local_filters_combine_and_status_describes_state() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._apply_search("mail")
+        app._apply_project_filter("infra")
+        app.action_toggle_blocked()
+        app.action_cycle_sort()
+
+        assert app.query_one("#tasks").row_count == 1
+        details = str(app.query_one("#details").render())
+        assert "search=mail" in details
+        assert "project=infra" in details
+        assert "blocked" in details
+        assert "sort=urgency" in details
 
 
 async def test_view_change_refetches_then_reapplies_search_and_sort() -> None:
