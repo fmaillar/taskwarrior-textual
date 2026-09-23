@@ -518,9 +518,15 @@ class TimewarriorReportScreen(ModalScreen[None]):
 
 
 class TimewarriorTrendScreen(ModalScreen[None]):
-    """Read-only seven-day Timewarrior trend report."""
+    """Read-only Timewarrior trend report with selectable periods."""
 
-    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [("escape", "close", "Close")]
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+        ("7", "period_7d", "7 days"),
+        ("3", "period_30d", "30 days"),
+        ("w", "period_week", "Week"),
+        ("m", "period_month", "Month"),
+        ("escape", "close", "Close"),
+    ]
 
     CSS = """
     TimewarriorTrendScreen { align: center middle; }
@@ -535,14 +541,31 @@ class TimewarriorTrendScreen(ModalScreen[None]):
     }
     """
 
-    def __init__(self, body: str) -> None:
+    def __init__(self, bodies: dict[str, str], initial_period: str = "7d") -> None:
         super().__init__()
-        self.body = body
+        self.bodies = bodies
+        self.period = initial_period
 
     def compose(self) -> ComposeResult:
         with Vertical(id="timewarrior-trend-box"):
-            yield Label("Timewarrior 7-day trend")
-            yield Static(self.body, id="timewarrior-trend-body")
+            yield Label("Timewarrior trend")
+            yield Static(self.bodies[self.period], id="timewarrior-trend-body")
+
+    def _select_period(self, period: str) -> None:
+        self.period = period
+        self.query_one("#timewarrior-trend-body", Static).update(self.bodies[period])
+
+    def action_period_7d(self) -> None:
+        self._select_period("7d")
+
+    def action_period_30d(self) -> None:
+        self._select_period("30d")
+
+    def action_period_week(self) -> None:
+        self._select_period("week")
+
+    def action_period_month(self) -> None:
+        self._select_period("month")
 
     def action_close(self) -> None:
         self.dismiss(None)
@@ -1351,28 +1374,74 @@ class TaskwarriorApp(App[None]):
         settings: PlanningSettings | None = None,
         *,
         now: datetime | None = None,
-        days: int = 7,
+        period: str = "7d",
+        days: int | None = None,
     ) -> str:
         """Summarize matched Timewarrior effort by local day and project."""
-        if days <= 0:
-            raise ValueError("days must be a positive integer")
-
         resolved_settings = settings or PlanningSettings()
         resolved_now = now or datetime.now(UTC)
         zone = WorkingCalendar(resolved_settings).timezone
         local_today = resolved_now.astimezone(zone).date()
-        first_day = local_today - timedelta(days=days - 1)
+
+        if days is not None:
+            if days <= 0:
+                raise ValueError("days must be a positive integer")
+            first_day = local_today - timedelta(days=days - 1)
+            last_day = local_today
+            label = (
+                f"Last {days} local days through {local_today.isoformat()} "
+                f"({resolved_settings.timezone})"
+            )
+        elif period == "7d":
+            first_day = local_today - timedelta(days=6)
+            last_day = local_today
+            label = (
+                f"Last 7 local days through {local_today.isoformat()} "
+                f"({resolved_settings.timezone})"
+            )
+        elif period == "30d":
+            first_day = local_today - timedelta(days=29)
+            last_day = local_today
+            label = (
+                f"Last 30 local days through {local_today.isoformat()} "
+                f"({resolved_settings.timezone})"
+            )
+        elif period == "week":
+            first_day = local_today - timedelta(days=local_today.weekday())
+            last_day = first_day + timedelta(days=6)
+            label = (
+                f"Current week {first_day.isoformat()} through {last_day.isoformat()} "
+                f"({resolved_settings.timezone})"
+            )
+        elif period == "month":
+            first_day = local_today.replace(day=1)
+            if first_day.month == 12:
+                next_month = first_day.replace(
+                    year=first_day.year + 1,
+                    month=1,
+                )
+            else:
+                next_month = first_day.replace(month=first_day.month + 1)
+            last_day = next_month - timedelta(days=1)
+            label = (
+                f"Current month {first_day.isoformat()} through {last_day.isoformat()} "
+                f"({resolved_settings.timezone})"
+            )
+        else:
+            raise ValueError(f"unknown trend period: {period}")
+
         window_start = datetime.combine(first_day, time.min, tzinfo=zone).astimezone(UTC)
         window_end = datetime.combine(
-            local_today + timedelta(days=1),
+            last_day + timedelta(days=1),
             time.min,
             tzinfo=zone,
         ).astimezone(UTC)
+        day_count = (last_day - first_day).days + 1
 
         by_uuid = {task.uuid: task for task in tasks}
         daily = {
             first_day + timedelta(days=offset): 0.0
-            for offset in range(days)
+            for offset in range(day_count)
         }
         projects: dict[str, float] = {}
 
@@ -1403,10 +1472,7 @@ class TaskwarriorApp(App[None]):
 
         total = sum(daily.values())
         lines = [
-            (
-                f"Last {days} local days through {local_today.isoformat()} "
-                f"({resolved_settings.timezone})"
-            ),
+            label,
             f"Tracked in window: {total:.2f}h",
             "",
             "Daily",
@@ -1812,7 +1878,7 @@ class TaskwarriorApp(App[None]):
         self.push_screen(MilestonesScreen(self._milestones_summary(self.view_tasks)))
 
     def action_show_timewarrior_trend(self) -> None:
-        """Show a seven-day Timewarrior trend for the current view."""
+        """Show selectable Timewarrior trends for the current view."""
         now = datetime.now(UTC)
         try:
             intervals = self.client.timewarrior_intervals(
@@ -1822,16 +1888,18 @@ class TaskwarriorApp(App[None]):
         except TaskwarriorError as exc:
             self._show_error(exc)
             return
-        self.push_screen(
-            TimewarriorTrendScreen(
-                self._timewarrior_trend(
-                    self.view_tasks,
-                    intervals,
-                    self.planning_settings,
-                    now=now,
-                )
+
+        bodies = {
+            period: self._timewarrior_trend(
+                self.view_tasks,
+                intervals,
+                self.planning_settings,
+                now=now,
+                period=period,
             )
-        )
+            for period in ("7d", "30d", "week", "month")
+        }
+        self.push_screen(TimewarriorTrendScreen(bodies))
 
     def action_show_timewarrior_report(self) -> None:
         """Show tracked effort and remaining work for the current view."""
