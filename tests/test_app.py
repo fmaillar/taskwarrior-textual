@@ -520,6 +520,21 @@ def test_critical_path_summary_omits_deadline_pressure_without_calendar_anchor()
     assert "aaaaaaaa | 1.00h | 0.00 | 1.00 | 0.00 | yes | task" in summary
 
 
+def test_critical_path_summary_omits_deadline_pressure_with_anchor_but_no_due() -> None:
+    task = Task(
+        uuid="12121212-1111-2222-3333-444444444444",
+        description="Scheduled only",
+        status="pending",
+        scheduled="20260924T090000Z",
+        estimate_hours=1.0,
+    )
+
+    summary = TaskwarriorApp._critical_path_summary([task])
+
+    assert "Project duration: 1.00h" in summary
+    assert "Deadline pressure" not in summary
+
+
 def test_critical_path_summary_reports_unresolved_dependencies() -> None:
     task = Task(
         uuid="aaaaaaaa-1111-2222-3333-444444444444",
