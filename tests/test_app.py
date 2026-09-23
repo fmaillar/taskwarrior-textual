@@ -16,6 +16,9 @@ TASK = Task(
     due="20260926T000000Z",
     urgency=9.38,
     tags=("mail", "rms"),
+    depends=("11111111-1111-1111-1111-111111111111",),
+    wait="20260924T080000Z",
+    scheduled="20260924T090000Z",
     start="20260923T070000Z",
 )
 
@@ -25,6 +28,7 @@ class FakeUiClient:
         self.calls: list[tuple[str, str]] = []
         self.fail: str | None = None
         self.tasks = [TASK] if tasks is None else tasks
+        self.modify_values: list[dict[str, object]] = []
 
     def _maybe_fail(self, action: str) -> None:
         if self.fail == action:
@@ -45,9 +49,10 @@ class FakeUiClient:
         self.calls.append(("add", values["description"]))
         return "created"
 
-    def modify(self, uuid_prefix: str, **values: str) -> str:
+    def modify(self, uuid_prefix: str, **values: object) -> str:
         self._maybe_fail("modify")
         self.calls.append(("modify", uuid_prefix))
+        self.modify_values.append(values)
         return "modified"
 
     def start(self, uuid_prefix: str) -> str:
@@ -167,6 +172,12 @@ async def test_edit_key_opens_prefilled_task_form() -> None:
         assert app.screen.query_one("#description").value == "Vérifier mail de RMS"
         assert app.screen.query_one("#priority").value == "L"
         assert app.screen.query_one("#due").value == "2026-09-26"
+        assert app.screen.query_one("#tags").value == "mail,rms"
+        assert app.screen.query_one("#wait").value == "2026-09-24 08:00"
+        assert app.screen.query_one("#scheduled").value == "2026-09-24 09:00"
+        assert app.screen.query_one("#depends").value == (
+            "11111111-1111-1111-1111-111111111111"
+        )
 
 
 async def test_add_form_save_calls_client() -> None:
@@ -181,6 +192,10 @@ async def test_add_form_save_calls_client() -> None:
         form.query_one("#project", Input).value = "Project"
         form.query_one("#priority", Input).value = "m"
         form.query_one("#due", Input).value = "2026-10-01"
+        form.query_one("#tags", Input).value = "home, next"
+        form.query_one("#wait", Input).value = "2026-09-30 08:00"
+        form.query_one("#scheduled", Input).value = "2026-09-30 09:00"
+        form.query_one("#depends", Input).value = "aaaaaaaa, bbbbbbbb"
         form.on_button_pressed(Button.Pressed(form.query_one("#save", Button)))
         await pilot.pause()
     assert ("add", "New task") in client.calls
@@ -225,9 +240,25 @@ async def test_edit_form_save_calls_modify() -> None:
         await pilot.pause()
         form = app.screen
         form.query_one("#description", Input).value = "Changed"
+        form.query_one("#tags", Input).value = "mail,work"
+        form.query_one("#wait", Input).value = ""
+        form.query_one("#scheduled", Input).value = "tomorrow 09:00"
+        form.query_one("#depends", Input).value = "22222222"
         form.on_button_pressed(Button.Pressed(form.query_one("#save", Button)))
         await pilot.pause()
+
     assert ("modify", TASK.short_uuid) in client.calls
+    assert client.modify_values[-1] == {
+        "description": "Changed",
+        "project": "",
+        "priority": "L",
+        "due": "2026-09-26",
+        "tags": "mail,work",
+        "wait": "",
+        "scheduled": "tomorrow 09:00",
+        "depends": "22222222",
+        "previous_tags": ("mail", "rms"),
+    }
 
 
 async def test_edit_form_cancel_does_not_modify() -> None:
