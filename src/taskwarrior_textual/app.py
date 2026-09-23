@@ -28,12 +28,12 @@ class TaskForm(ModalScreen[dict[str, str] | None]):
     #form-buttons Button { margin-right: 1; }
     """
 
-    def __init__(self, task: Task | None = None) -> None:
+    def __init__(self, initial_task: Task | None = None) -> None:
         super().__init__()
-        self.task = task
+        self.initial_task = initial_task
 
     def compose(self) -> ComposeResult:
-        task = self.task
+        task = self.initial_task
         with Vertical(id="form"):
             yield Label("Edit task" if task else "Add task")
             yield Input(
@@ -90,14 +90,14 @@ class ConfirmDelete(ModalScreen[bool]):
     }
     """
 
-    def __init__(self, task: Task) -> None:
+    def __init__(self, target_task: Task) -> None:
         super().__init__()
-        self.task = task
+        self.target_task = target_task
 
     def compose(self) -> ComposeResult:
         with Vertical(id="confirm"):
-            yield Label(f"Delete task {self.task.short_uuid}?")
-            yield Static(self.task.description)
+            yield Label(f"Delete task {self.target_task.short_uuid}?")
+            yield Static(self.target_task.description)
             with Horizontal():
                 yield Button("Delete", variant="error", id="delete")
                 yield Button("Cancel", id="cancel")
