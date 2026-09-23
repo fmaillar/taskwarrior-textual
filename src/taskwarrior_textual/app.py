@@ -9,6 +9,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
 
+from .config import PlanningSettings
 from .models import Task
 from .planning import (
     build_absolute_schedule,
@@ -559,9 +560,14 @@ class TaskwarriorApp(App[None]):
     #details { width: 1fr; padding: 1 2; border-left: solid $primary; }
     """
 
-    def __init__(self, client: TaskwarriorClient | None = None) -> None:
+    def __init__(
+        self,
+        client: TaskwarriorClient | None = None,
+        planning_settings: PlanningSettings | None = None,
+    ) -> None:
         super().__init__()
         self.client = client or TaskwarriorClient()
+        self.planning_settings = planning_settings or PlanningSettings()
         self.tasks: dict[str, Task] = {}
         self.view_tasks: list[Task] = []
         self.current_view = "pending"
@@ -846,7 +852,10 @@ class TaskwarriorApp(App[None]):
         return "\n".join(lines)
 
     @staticmethod
-    def _critical_path_summary(tasks: list[Task]) -> str:
+    def _critical_path_summary(
+        tasks: list[Task],
+        settings: PlanningSettings | None = None,
+    ) -> str:
         """Compute a CPM schedule from resolved dependencies and estimates."""
         if not tasks:
             return "No tasks in current view."
@@ -909,7 +918,7 @@ class TaskwarriorApp(App[None]):
                 f"{'milestone' if task.is_milestone else 'task'}"
             )
 
-        absolute = build_absolute_schedule(graph)
+        absolute = build_absolute_schedule(graph, settings)
         if absolute is not None:
             deadline_rows = [
                 uuid
@@ -1027,7 +1036,11 @@ class TaskwarriorApp(App[None]):
         return parse_taskwarrior_datetime(value)
 
     @classmethod
-    def _calendar_plan(cls, tasks: list[Task]) -> str:
+    def _calendar_plan(
+        cls,
+        tasks: list[Task],
+        settings: PlanningSettings | None = None,
+    ) -> str:
         """Build an absolute UTC schedule from dependencies and scheduled dates."""
         if not tasks:
             return "No tasks in current view."
@@ -1036,7 +1049,7 @@ class TaskwarriorApp(App[None]):
         if graph.cyclic:
             return "Calendar plan unavailable: dependency cycle detected."
 
-        schedule = build_absolute_schedule(graph)
+        schedule = build_absolute_schedule(graph, settings)
         if schedule is None:
             return "Calendar plan unavailable: no valid scheduled date in current view."
 
@@ -1340,7 +1353,11 @@ class TaskwarriorApp(App[None]):
 
     def action_show_critical_path(self) -> None:
         """Show estimate-based critical-path analysis for the current view."""
-        self.push_screen(CriticalPathScreen(self._critical_path_summary(self.view_tasks)))
+        self.push_screen(
+            CriticalPathScreen(
+                self._critical_path_summary(self.view_tasks, self.planning_settings)
+            )
+        )
 
     def action_show_gantt(self) -> None:
         """Show an estimate-based local Gantt view for the current view."""
@@ -1348,7 +1365,11 @@ class TaskwarriorApp(App[None]):
 
     def action_show_calendar_plan(self) -> None:
         """Show an absolute calendar schedule for the current view."""
-        self.push_screen(CalendarPlanScreen(self._calendar_plan(self.view_tasks)))
+        self.push_screen(
+            CalendarPlanScreen(
+                self._calendar_plan(self.view_tasks, self.planning_settings)
+            )
+        )
 
     def action_show_constraints(self) -> None:
         """Show scheduled and due constraints for the current view."""
