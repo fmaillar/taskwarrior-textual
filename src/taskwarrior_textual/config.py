@@ -150,7 +150,7 @@ class WorkingCalendar:
             return current
 
         remaining = hours
-        while remaining > 0:
+        while True:
             period_end = next(
                 end
                 for period_start, end in self._periods_for_date(current.date())
