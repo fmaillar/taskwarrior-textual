@@ -26,4 +26,4 @@ TOTAL    1038      0    252      0   100%
 Coverage HTML written to dir htmlcov
 Coverage XML written to file reports/coverage.xml
 Required test coverage of 95.0% reached. Total coverage: 100.00%
-======================== 166 passed in 80.21s (0:01:20) ========================
+======================== 166 passed in 80.84s (0:01:20) ========================
