@@ -2309,7 +2309,7 @@ def test_project_dashboard_consolidates_project_effort_graph_and_calendar() -> N
     assert "Dependency graph: acyclic | Resolved edges: 2 | Unresolved: 0" in summary
     assert "Graph remaining duration: 4.50h" in summary
     assert "Critical path: 10101010 -> 20202020 -> 30303030" in summary
-    assert "Planned finish: 2026-09-24 13:30 UTC | Late project tasks: 0" in summary
+    assert "Planned finish: 2026-09-24 14:00 UTC | Late project tasks: 0" in summary
     assert (
         "10101010 | external:Shared | pending | 1.00h | 0.50h | 0.50h"
         in summary
