@@ -679,6 +679,26 @@ async def test_blocked_filter_toggles_locally_without_refetch() -> None:
         assert client.calls.count(("view", "pending")) == initial_view_calls
 
 
+async def test_escape_in_project_filter_clears_filter() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._apply_project_filter("infra")
+        assert app.project_filter == "infra"
+        assert app.query_one("#tasks").row_count == 1
+
+        await pilot.press("p")
+        await pilot.pause()
+        assert isinstance(app.screen, ProjectFilterForm)
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert app.project_filter == ""
+        assert app.query_one("#tasks").row_count == 3
+
+
 async def test_project_filter_form_applies_and_clears_locally() -> None:
     client = FakeUiClient(tasks=SEARCH_TASKS)
     app = TaskwarriorApp(client=client)
