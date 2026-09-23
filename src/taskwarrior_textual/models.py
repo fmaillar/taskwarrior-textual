@@ -38,6 +38,7 @@ class Task:
     start: str = ""
     end: str = ""
     entry: str = ""
+    estimate_hours: float = 0.0
 
     @property
     def short_uuid(self) -> str:
@@ -70,6 +71,13 @@ class Task:
         return format_taskwarrior_datetime(self.end)
 
     @property
+    def display_estimate(self) -> str:
+        """Return the planning estimate in hours when present."""
+        if self.estimate_hours == 0:
+            return ""
+        return f"{self.estimate_hours:.2f}h"
+
+    @property
     def active(self) -> bool:
         """Return whether Taskwarrior currently considers the task started."""
         return bool(self.start and not self.end)
@@ -92,4 +100,5 @@ class Task:
             start=str(value.get("start", "")),
             end=str(value.get("end", "")),
             entry=str(value.get("entry", "")),
+            estimate_hours=float(value.get("estimate", 0.0)),
         )
