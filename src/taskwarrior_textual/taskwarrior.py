@@ -17,6 +17,14 @@ class TaskwarriorError(RuntimeError):
     """Raised when the Taskwarrior CLI cannot be used successfully."""
 
 
+VIEW_FILTERS = {
+    "pending": "status:pending",
+    "waiting": "status:waiting",
+    "completed": "status:completed",
+    "deleted": "status:deleted",
+}
+
+
 @dataclass(slots=True)
 class TaskwarriorClient:
     """Thin adapter around the public Taskwarrior CLI."""
@@ -57,9 +65,17 @@ class TaskwarriorClient:
             raise TaskwarriorError("Taskwarrior export did not return a JSON array")
         return [Task.from_export(item) for item in payload]
 
+    def view(self, name: str) -> list[Task]:
+        """Return tasks from one of the supported named views."""
+        try:
+            task_filter = VIEW_FILTERS[name]
+        except KeyError as exc:
+            raise ValueError(f"Unknown task view: {name}") from exc
+        return self.export(task_filter)
+
     def pending(self) -> list[Task]:
         """Return pending tasks."""
-        return self.export("status:pending")
+        return self.view("pending")
 
     def information(self, uuid_prefix: str) -> str:
         """Return Taskwarrior's human-readable task information."""
