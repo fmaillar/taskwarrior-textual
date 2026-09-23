@@ -87,7 +87,7 @@ def test_planning_settings_rejects_nonpositive_capacity(capacity: int) -> None:
 
 
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from taskwarrior_textual.config import WorkingCalendar
 
@@ -100,20 +100,20 @@ def test_working_calendar_recognizes_work_periods_and_holidays() -> None:
         )
     )
 
-    assert calendar.is_working_time(datetime(2026, 9, 23, 8, 0)) is True
-    assert calendar.is_working_time(datetime(2026, 9, 23, 12, 30)) is False
-    assert calendar.is_working_time(datetime(2026, 9, 23, 17, 0)) is False
-    assert calendar.is_working_time(datetime(2026, 9, 24, 9, 0)) is False
-    assert calendar.is_working_time(datetime(2026, 9, 26, 9, 0)) is False
+    assert calendar.is_working_time(datetime(2026, 9, 23, 8, 0, tzinfo=UTC)) is True
+    assert calendar.is_working_time(datetime(2026, 9, 23, 12, 30, tzinfo=UTC)) is False
+    assert calendar.is_working_time(datetime(2026, 9, 23, 17, 0, tzinfo=UTC)) is False
+    assert calendar.is_working_time(datetime(2026, 9, 24, 9, 0, tzinfo=UTC)) is False
+    assert calendar.is_working_time(datetime(2026, 9, 26, 9, 0, tzinfo=UTC)) is False
 
 
 def test_working_calendar_moves_to_next_valid_work_instant() -> None:
     calendar = WorkingCalendar(PlanningSettings(timezone="UTC"))
 
-    assert calendar.next_working_time(datetime(2026, 9, 23, 12, 30)) == datetime(
+    assert calendar.next_working_time(datetime(2026, 9, 23, 12, 30, tzinfo=UTC)) == datetime(
         2026, 9, 23, 13, 0
     )
-    assert calendar.next_working_time(datetime(2026, 9, 25, 17, 30)) == datetime(
+    assert calendar.next_working_time(datetime(2026, 9, 25, 17, 30, tzinfo=UTC)) == datetime(
         2026, 9, 28, 8, 0
     )
 
@@ -121,10 +121,10 @@ def test_working_calendar_moves_to_next_valid_work_instant() -> None:
 def test_working_calendar_adds_hours_across_breaks_and_weekends() -> None:
     calendar = WorkingCalendar(PlanningSettings(timezone="UTC"))
 
-    assert calendar.add_working_hours(datetime(2026, 9, 25, 15, 0), 8) == datetime(
+    assert calendar.add_working_hours(datetime(2026, 9, 25, 15, 0, tzinfo=UTC), 8) == datetime(
         2026, 9, 28, 15, 0
     )
-    assert calendar.add_working_hours(datetime(2026, 9, 23, 11, 0), 3) == datetime(
+    assert calendar.add_working_hours(datetime(2026, 9, 23, 11, 0, tzinfo=UTC), 3) == datetime(
         2026, 9, 23, 15, 0
     )
 
@@ -132,10 +132,10 @@ def test_working_calendar_adds_hours_across_breaks_and_weekends() -> None:
 def test_working_calendar_zero_duration_keeps_valid_instant_and_normalizes_invalid_one() -> None:
     calendar = WorkingCalendar(PlanningSettings(timezone="UTC"))
 
-    assert calendar.add_working_hours(datetime(2026, 9, 23, 10, 0), 0) == datetime(
+    assert calendar.add_working_hours(datetime(2026, 9, 23, 10, 0, tzinfo=UTC), 0) == datetime(
         2026, 9, 23, 10, 0
     )
-    assert calendar.add_working_hours(datetime(2026, 9, 23, 12, 30), 0) == datetime(
+    assert calendar.add_working_hours(datetime(2026, 9, 23, 12, 30, tzinfo=UTC), 0) == datetime(
         2026, 9, 23, 13, 0
     )
 
@@ -144,13 +144,13 @@ def test_working_calendar_rejects_negative_work_duration() -> None:
     calendar = WorkingCalendar(PlanningSettings(timezone="UTC"))
 
     with pytest.raises(ValueError, match="non-negative"):
-        calendar.add_working_hours(datetime(2026, 9, 23, 10, 0), -1)
+        calendar.add_working_hours(datetime(2026, 9, 23, 10, 0, tzinfo=UTC), -1)
 
 
 def test_working_calendar_date_deadline_is_end_of_last_work_period() -> None:
     calendar = WorkingCalendar(PlanningSettings(timezone="UTC"))
 
-    assert calendar.deadline_for_date("2026-09-25") == datetime(2026, 9, 25, 17, 0)
+    assert calendar.deadline_for_date("2026-09-25") == datetime(2026, 9, 25, 17, 0, tzinfo=UTC)
 
 
 def test_working_calendar_rejects_nonworking_date_deadline() -> None:
