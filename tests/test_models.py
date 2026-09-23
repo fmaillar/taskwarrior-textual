@@ -36,6 +36,7 @@ def test_task_from_export() -> None:
     assert task.display_wait == "2026-09-24 08:00"
     assert task.display_scheduled == "2026-09-24 09:00"
     assert task.display_entry == "2026-09-22 12:00"
+    assert task.display_end == ""
     assert task.active is True
 
 
@@ -59,6 +60,7 @@ def test_task_defaults_for_optional_metadata() -> None:
     assert task.display_wait == ""
     assert task.display_scheduled == ""
     assert task.display_entry == ""
+    assert task.display_end == ""
 
 
 def test_completed_task_is_not_active_even_with_start() -> None:
@@ -71,6 +73,7 @@ def test_completed_task_is_not_active_even_with_start() -> None:
     )
 
     assert task.active is False
+    assert task.display_end == "2026-09-23 08:00"
 
 
 def test_format_taskwarrior_datetime_empty_value() -> None:
