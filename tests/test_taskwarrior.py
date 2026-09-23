@@ -372,6 +372,14 @@ def test_modify_can_clear_optional_fields() -> None:
     ]
 
 
+def test_modify_scheduled_updates_only_scheduled_field() -> None:
+    client = RecordingClient()
+    client.modify_scheduled("12345678", "20260924T090000Z")
+    assert client.calls == [
+        ["12345678", "modify", "scheduled:20260924T090000Z"],
+    ]
+
+
 def test_modify_planning_replaces_only_planning_fields() -> None:
     client = RecordingClient()
     client.modify_planning(
