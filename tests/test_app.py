@@ -507,6 +507,48 @@ def test_sort_cycle_is_deterministic() -> None:
         "aaaaaaaa",
         "cccccccc",
     ]
+
+    waiting_tasks = [
+        Task(
+            uuid="dddddddd-1111-2222-3333-444444444444",
+            description="Wait first",
+            status="waiting",
+            wait="20260924T080000Z",
+        ),
+        Task(
+            uuid="eeeeeeee-1111-2222-3333-444444444444",
+            description="Wait later",
+            status="waiting",
+            wait="20260925T080000Z",
+        ),
+    ]
+    assert [
+        task.short_uuid
+        for task in TaskwarriorApp._sort_tasks(waiting_tasks, "when", "waiting")
+    ] == ["dddddddd", "eeeeeeee"]
+
+    completed_tasks = [
+        Task(
+            uuid="ffffffff-1111-2222-3333-444444444444",
+            description="Completed first",
+            status="completed",
+            end="20260924T080000Z",
+        ),
+        Task(
+            uuid="99999999-1111-2222-3333-444444444444",
+            description="Completed later",
+            status="completed",
+            end="20260925T080000Z",
+        ),
+    ]
+    assert [
+        task.short_uuid
+        for task in TaskwarriorApp._sort_tasks(completed_tasks, "when", "completed")
+    ] == ["ffffffff", "99999999"]
+    assert [
+        task.short_uuid
+        for task in TaskwarriorApp._sort_tasks(completed_tasks, "when", "deleted")
+    ] == ["ffffffff", "99999999"]
     assert [task.short_uuid for task in TaskwarriorApp._sort_tasks(SEARCH_TASKS, "project")] == [
         "aaaaaaaa",
         "bbbbbbbb",
