@@ -1481,6 +1481,122 @@ def test_timewarrior_trend_supports_30_day_current_week_and_current_month() -> N
     assert "Tracked in window: 6.00h" in current_month
 
 
+def test_timewarrior_trend_compares_with_previous_equivalent_window() -> None:
+    task = Task(
+        uuid="91919191-1111-1111-1111-111111111111",
+        description="Tracked",
+        status="pending",
+        project="Work",
+    )
+    intervals = (
+        TimewarriorInterval(
+            task_uuid=task.uuid,
+            start=datetime(2026, 9, 10, 8, 0, tzinfo=UTC),
+            end=datetime(2026, 9, 10, 10, 0, tzinfo=UTC),
+        ),
+        TimewarriorInterval(
+            task_uuid=task.uuid,
+            start=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+            end=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
+        ),
+    )
+
+    summary = TaskwarriorApp._timewarrior_trend(
+        [task],
+        intervals,
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
+        period="7d",
+    )
+
+    assert "Tracked in window: 4.00h" in summary
+    assert "Previous comparable: 2.00h" in summary
+    assert "Change: +2.00h (+100.0%)" in summary
+    assert "Work | 4.00h | 2.00h | +2.00h" in summary
+
+
+def test_timewarrior_trend_reports_new_activity_when_previous_is_zero() -> None:
+    task = Task(
+        uuid="92929292-1111-1111-1111-111111111111",
+        description="New work",
+        status="pending",
+        project="New",
+    )
+    interval = TimewarriorInterval(
+        task_uuid=task.uuid,
+        start=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+        end=datetime(2026, 9, 23, 9, 0, tzinfo=UTC),
+    )
+
+    summary = TaskwarriorApp._timewarrior_trend(
+        [task],
+        (interval,),
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
+        period="7d",
+    )
+
+    assert "Previous comparable: 0.00h" in summary
+    assert "Change: +1.00h (new)" in summary
+    assert "New | 1.00h | 0.00h | +1.00h" in summary
+
+
+def test_timewarrior_trend_week_and_month_compare_period_to_date() -> None:
+    task = Task(
+        uuid="93939393-1111-1111-1111-111111111111",
+        description="Period work",
+        status="pending",
+        project="Work",
+    )
+    intervals = (
+        TimewarriorInterval(
+            task_uuid=task.uuid,
+            start=datetime(2026, 9, 14, 8, 0, tzinfo=UTC),
+            end=datetime(2026, 9, 14, 9, 0, tzinfo=UTC),
+        ),
+        TimewarriorInterval(
+            task_uuid=task.uuid,
+            start=datetime(2026, 9, 16, 8, 0, tzinfo=UTC),
+            end=datetime(2026, 9, 16, 9, 0, tzinfo=UTC),
+        ),
+        TimewarriorInterval(
+            task_uuid=task.uuid,
+            start=datetime(2026, 8, 1, 8, 0, tzinfo=UTC),
+            end=datetime(2026, 8, 1, 11, 0, tzinfo=UTC),
+        ),
+        TimewarriorInterval(
+            task_uuid=task.uuid,
+            start=datetime(2026, 8, 23, 8, 0, tzinfo=UTC),
+            end=datetime(2026, 8, 23, 9, 0, tzinfo=UTC),
+        ),
+        TimewarriorInterval(
+            task_uuid=task.uuid,
+            start=datetime(2026, 9, 21, 8, 0, tzinfo=UTC),
+            end=datetime(2026, 9, 21, 12, 0, tzinfo=UTC),
+        ),
+        TimewarriorInterval(
+            task_uuid=task.uuid,
+            start=datetime(2026, 9, 1, 8, 0, tzinfo=UTC),
+            end=datetime(2026, 9, 1, 10, 0, tzinfo=UTC),
+        ),
+    )
+    settings = PlanningSettings(timezone="UTC")
+    now = datetime(2026, 9, 23, 12, 0, tzinfo=UTC)
+
+    week = TaskwarriorApp._timewarrior_trend(
+        [task], intervals, settings, now=now, period="week"
+    )
+    month = TaskwarriorApp._timewarrior_trend(
+        [task], intervals, settings, now=now, period="month"
+    )
+
+    assert "Tracked in window: 6.00h" in week
+    assert "Previous comparable: 2.00h" in week
+    assert "Tracked in window: 6.00h" in month
+    assert "Previous comparable: 6.00h" in month
+    assert "Change: +0.00h (+0.0%)" in month
+
+
 def test_timewarrior_trend_current_month_handles_december_year_boundary() -> None:
     summary = TaskwarriorApp._timewarrior_trend(
         [],
