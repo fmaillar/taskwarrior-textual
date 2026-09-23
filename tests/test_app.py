@@ -17,6 +17,7 @@ from taskwarrior_textual.app import (
     MilestonesScreen,
     ProjectFilterForm,
     ProjectOverviewScreen,
+    PlanningForm,
     SearchForm,
     TagFilterForm,
     TaskForm,
@@ -91,6 +92,7 @@ class FakeUiClient:
         self.tracked_intervals: tuple[TimewarriorInterval, ...] = ()
         self.add_values: list[dict[str, str]] = []
         self.modify_values: list[dict[str, object]] = []
+        self.planning_values: list[dict[str, str]] = []
 
     def _maybe_fail(self, action: str) -> None:
         if self.fail == action:
@@ -142,6 +144,12 @@ class FakeUiClient:
         self.calls.append(("modify", uuid_prefix))
         self.modify_values.append(values)
         return "modified"
+
+    def modify_planning(self, uuid_prefix: str, **values: str) -> str:
+        self._maybe_fail("modify_planning")
+        self.calls.append(("modify_planning", uuid_prefix))
+        self.planning_values.append(values)
+        return "planned"
 
     def start(self, uuid_prefix: str) -> str:
         self._maybe_fail("start")
@@ -1897,6 +1905,234 @@ async def test_timewarrior_report_key_opens_report_without_refetch() -> None:
         await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(app.screen, TimewarriorReportScreen)
+
+
+def test_resolve_planning_dependencies_expands_unique_prefixes_and_deduplicates() -> None:
+    target = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Target",
+        status="pending",
+    )
+    first = Task(
+        uuid="aaaaaaaa-1111-1111-1111-111111111111",
+        description="First",
+        status="pending",
+    )
+    second = Task(
+        uuid="bbbbbbbb-1111-1111-1111-111111111111",
+        description="Second",
+        status="pending",
+    )
+
+    resolved = TaskwarriorApp._resolve_planning_dependencies(
+        "aaaaaaaa, bbbbbbbb, aaaaaaaa",
+        target,
+        [target, first, second],
+    )
+
+    assert resolved == f"{first.uuid},{second.uuid}"
+
+
+def test_resolve_planning_dependencies_rejects_self_unknown_and_ambiguous_prefixes() -> None:
+    target = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Target",
+        status="pending",
+    )
+    ambiguous_a = Task(
+        uuid="aaaaaaaa-1111-1111-1111-111111111111",
+        description="A",
+        status="pending",
+    )
+    ambiguous_b = Task(
+        uuid="aaaaaaab-1111-1111-1111-111111111111",
+        description="B",
+        status="pending",
+    )
+
+    with pytest.raises(TaskwarriorError, match="itself"):
+        TaskwarriorApp._resolve_planning_dependencies(
+            target.short_uuid,
+            target,
+            [target, ambiguous_a, ambiguous_b],
+        )
+    with pytest.raises(TaskwarriorError, match="unknown"):
+        TaskwarriorApp._resolve_planning_dependencies(
+            "deadbeef",
+            target,
+            [target, ambiguous_a, ambiguous_b],
+        )
+    with pytest.raises(TaskwarriorError, match="ambiguous"):
+        TaskwarriorApp._resolve_planning_dependencies(
+            "aaaa",
+            target,
+            [target, ambiguous_a, ambiguous_b],
+        )
+
+
+def test_planning_form_initializes_fields_and_candidate_reference() -> None:
+    target = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Target",
+        status="pending",
+        due="20261001T000000Z",
+        wait="20260925T080000Z",
+        scheduled="20260926T090000Z",
+        depends=("aaaaaaaa-1111-1111-1111-111111111111",),
+        estimate_hours=3.5,
+    )
+    candidate = Task(
+        uuid="aaaaaaaa-1111-1111-1111-111111111111",
+        description="Dependency",
+        status="pending",
+        project="Infra",
+    )
+    form = PlanningForm(target, [target, candidate])
+
+    assert "aaaaaaaa | Infra | Dependency" in form.candidate_body
+
+
+async def test_planning_form_submits_planning_values() -> None:
+    target = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Target",
+        status="pending",
+        depends=("aaaaaaaa-1111-1111-1111-111111111111",),
+        estimate_hours=3.5,
+    )
+    candidate = Task(
+        uuid="aaaaaaaa-1111-1111-1111-111111111111",
+        description="Dependency",
+        status="pending",
+    )
+    app = TaskwarriorApp(client=FakeUiClient(tasks=[target, candidate]))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(PlanningForm(target, [target, candidate]))
+        await pilot.pause()
+
+        form = app.screen
+        assert isinstance(form, PlanningForm)
+        form.query_one("#planning-due", Input).value = "2026-10-01"
+        form.query_one("#planning-wait", Input).value = "2026-09-25 08:00"
+        form.query_one("#planning-scheduled", Input).value = "2026-09-26 09:00"
+        form.query_one("#planning-depends", Input).value = "aaaaaaaa"
+        form.query_one("#planning-estimate", Input).value = "5.5"
+        form.on_button_pressed(Button.Pressed(form.query_one("#planning-save", Button)))
+        await pilot.pause()
+
+        assert app.screen is app
+
+
+async def test_planning_editor_updates_only_planning_fields_and_refreshes() -> None:
+    target = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Target",
+        status="pending",
+        depends=("aaaaaaaa-1111-1111-1111-111111111111",),
+        estimate_hours=3.5,
+    )
+    dependency = Task(
+        uuid="aaaaaaaa-1111-1111-1111-111111111111",
+        description="Dependency",
+        status="pending",
+    )
+    client = FakeUiClient(tasks=[target, dependency])
+    client.expanded_tasks = [target, dependency]
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+e")
+        await pilot.pause()
+
+        assert isinstance(app.screen, PlanningForm)
+        app.screen.query_one("#planning-due", Input).value = "2026-10-01"
+        app.screen.query_one("#planning-wait", Input).value = ""
+        app.screen.query_one("#planning-scheduled", Input).value = "2026-09-26 09:00"
+        app.screen.query_one("#planning-depends", Input).value = "aaaaaaaa"
+        app.screen.query_one("#planning-estimate", Input).value = "5.5"
+        app.screen.on_button_pressed(
+            Button.Pressed(app.screen.query_one("#planning-save", Button))
+        )
+        await pilot.pause()
+
+        assert ("expand_dependencies", app.planning_settings.dependency_depth) in client.calls
+        assert ("modify_planning", target.short_uuid) in client.calls
+        assert client.planning_values[-1] == {
+            "due": "2026-10-01",
+            "wait": "",
+            "scheduled": "2026-09-26 09:00",
+            "depends": dependency.uuid,
+            "estimate": "5.5",
+        }
+        assert client.calls.count(("view", "pending")) >= 2
+
+
+async def test_planning_editor_rejects_invalid_dependency_without_modification() -> None:
+    target = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Target",
+        status="pending",
+    )
+    client = FakeUiClient(tasks=[target])
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+e")
+        await pilot.pause()
+
+        assert isinstance(app.screen, PlanningForm)
+        app.screen.query_one("#planning-depends", Input).value = "deadbeef"
+        app.screen.on_button_pressed(
+            Button.Pressed(app.screen.query_one("#planning-save", Button))
+        )
+        await pilot.pause()
+
+        assert ("modify_planning", target.short_uuid) not in client.calls
+        assert "unknown dependency" in str(app.query_one("#details").render())
+
+
+async def test_planning_editor_does_not_open_when_dependency_expansion_fails() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    client.fail = "expand_dependencies"
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+e")
+        await pilot.pause()
+
+        assert not isinstance(app.screen, PlanningForm)
+        assert "expand_dependencies failed" in str(app.query_one("#details").render())
+
+
+async def test_planning_editor_handles_modify_failure_without_refresh() -> None:
+    target = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Target",
+        status="pending",
+    )
+    client = FakeUiClient(tasks=[target])
+    client.fail = "modify_planning"
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial_view_calls = client.calls.count(("view", "pending"))
+        await pilot.press("shift+e")
+        await pilot.pause()
+
+        assert isinstance(app.screen, PlanningForm)
+        app.screen.on_button_pressed(
+            Button.Pressed(app.screen.query_one("#planning-save", Button))
+        )
+        await pilot.pause()
+
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+        assert "modify_planning failed" in str(app.query_one("#details").render())
 
 
 async def test_timewarrior_report_does_not_open_when_timewarrior_fails() -> None:
