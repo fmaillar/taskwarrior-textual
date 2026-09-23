@@ -65,6 +65,11 @@ class Task:
         return format_taskwarrior_datetime(self.entry)
 
     @property
+    def display_end(self) -> str:
+        """Return a compact human-readable completion/deletion date."""
+        return format_taskwarrior_datetime(self.end)
+
+    @property
     def active(self) -> bool:
         """Return whether Taskwarrior currently considers the task started."""
         return bool(self.start and not self.end)
