@@ -802,8 +802,6 @@ class TaskwarriorApp(App[None]):
                 ),
                 key=lambda uuid: by_uuid[uuid].short_uuid,
             )
-            if not candidates:
-                break
             current = candidates[0]
             path.append(current)
         path.reverse()
