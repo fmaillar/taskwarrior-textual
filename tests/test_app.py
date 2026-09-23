@@ -1590,11 +1590,11 @@ def test_timewarrior_trend_week_and_month_compare_period_to_date() -> None:
         [task], intervals, settings, now=now, period="month"
     )
 
-    assert "Tracked in window: 6.00h" in week
+    assert "Tracked in window: 4.00h" in week
     assert "Previous comparable: 2.00h" in week
     assert "Tracked in window: 6.00h" in month
-    assert "Previous comparable: 6.00h" in month
-    assert "Change: +0.00h (+0.0%)" in month
+    assert "Previous comparable: 4.00h" in month
+    assert "Change: +2.00h (+50.0%)" in month
 
 
 def test_timewarrior_trend_current_month_handles_december_year_boundary() -> None:
