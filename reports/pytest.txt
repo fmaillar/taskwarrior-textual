@@ -5,13 +5,13 @@ configfile: pyproject.toml
 testpaths: tests
 plugins: asyncio-1.4.0, cov-7.1.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collected 116 items
+collected 120 items
 
-tests/test_app.py ...................................................... [ 46%]
-......................                                                   [ 65%]
-tests/test_main.py ..                                                    [ 67%]
-tests/test_models.py .......                                             [ 73%]
-tests/test_planning.py ........                                          [ 80%]
+tests/test_app.py ...................................................... [ 45%]
+......................                                                   [ 63%]
+tests/test_main.py ..                                                    [ 65%]
+tests/test_models.py .......                                             [ 70%]
+tests/test_planning.py ............                                      [ 80%]
 tests/test_taskwarrior.py .......................                        [100%]
 
 - generated xml file: /home/fgm/projets/taskwarrior-textual/reports/junit.xml --
@@ -20,10 +20,10 @@ _______________ coverage: platform linux, python 3.13.5-final-0 ________________
 
 Name    Stmts   Miss Branch BrPart  Cover   Missing
 ---------------------------------------------------
-TOTAL     855      0    190      0   100%
+TOTAL     875      0    194      0   100%
 
 6 files skipped due to complete coverage.
 Coverage HTML written to dir htmlcov
 Coverage XML written to file reports/coverage.xml
 Required test coverage of 95.0% reached. Total coverage: 100.00%
-============================= 116 passed in 43.89s =============================
+============================= 120 passed in 43.50s =============================
