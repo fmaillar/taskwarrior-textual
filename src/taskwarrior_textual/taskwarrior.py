@@ -373,21 +373,15 @@ class TaskwarriorClient:
             self._require_estimate_uda()
         if estimate:
             self._validate_estimate(estimate)
-        return self._run(
-            [
-                uuid_prefix,
-                "modify",
-                *self._attributes(
-                    due=due,
-                    wait=wait,
-                    scheduled=scheduled,
-                    depends=depends,
-                    estimate=estimate,
-                    include_empty=True,
-                    include_estimate=include_estimate,
-                ),
-            ]
-        )
+        attributes = [
+            f"due:{due}",
+            f"wait:{wait}",
+            f"scheduled:{scheduled}",
+            f"depends:{','.join(self._parse_list(depends))}",
+        ]
+        if include_estimate:
+            attributes.append(f"estimate:{estimate}")
+        return self._run([uuid_prefix, "modify", *attributes])
 
     def modify(
         self,
