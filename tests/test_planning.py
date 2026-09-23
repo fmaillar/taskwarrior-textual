@@ -342,6 +342,28 @@ def test_build_absolute_schedule_uses_configured_working_periods() -> None:
     assert schedule.finishes[task.uuid] == datetime(2026, 9, 25, 17, 0, tzinfo=UTC)
 
 
+def test_build_absolute_schedule_uses_configured_timezone_for_working_hours() -> None:
+    task = Task(
+        uuid="bcbcbcbc-1111-2222-3333-444444444444",
+        description="Paris workday",
+        status="pending",
+        scheduled="20260925T060000Z",
+        due="20260925T000000Z",
+        estimate_hours=8.0,
+    )
+    settings = PlanningSettings(timezone="Europe/Paris")
+
+    schedule = build_absolute_schedule(build_planning_graph([task]), settings)
+
+    assert schedule is not None
+    assert schedule.origin == datetime(2026, 9, 25, 6, 0, tzinfo=UTC)
+    assert schedule.starts[task.uuid] == datetime(2026, 9, 25, 6, 0, tzinfo=UTC)
+    assert schedule.finishes[task.uuid] == datetime(2026, 9, 25, 15, 0, tzinfo=UTC)
+    assert schedule.due_slack[task.uuid] == 0.0
+    assert schedule.invalid_due == ()
+    assert schedule.invalid_scheduled == ()
+
+
 def test_build_absolute_schedule_flags_scheduled_outside_working_calendar() -> None:
     invalid = Task(
         uuid="cdcdcdcd-1111-2222-3333-444444444444",
