@@ -100,6 +100,7 @@ async def test_selected_task_is_none_with_empty_table() -> None:
         app.action_start_task()
         app.action_edit_task()
         app.action_delete_task()
+        app.action_inspect_task()
 
 
 async def test_edit_key_opens_prefilled_task_form() -> None:
