@@ -835,12 +835,20 @@ def test_calendar_plan_reports_unestimated_unresolved_and_invalid_due() -> None:
         due="not-a-date",
         estimate_hours=1.0,
     )
+    invalid_start = Task(
+        uuid="cccccccc-1111-2222-3333-444444444444",
+        description="Bad start",
+        status="pending",
+        scheduled="tomorrow",
+        estimate_hours=1.0,
+    )
 
-    summary = TaskwarriorApp._calendar_plan([second, first])
+    summary = TaskwarriorApp._calendar_plan([invalid_start, second, first])
 
     assert "Unestimated tasks treated as 0h: aaaaaaaa" in summary
     assert "Unresolved dependencies ignored: bbbbbbbb -> 99999999" in summary
     assert "Invalid due dates ignored: bbbbbbbb" in summary
+    assert "Invalid scheduled dates ignored: cccccccc" in summary
     assert "Late tasks: 0" in summary
 
 
