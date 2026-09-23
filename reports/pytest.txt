@@ -24,7 +24,7 @@ _____________________________ test_inspect_success _____________________________
             await pilot.pause()
 >           assert ("information", TASK.short_uuid) in client.calls
 E           AssertionError: assert ('information', '1b17dac7') in []
-E            +  where [] = <test_app.FakeUiClient object at 0x7f3cc3071310>.calls
+E            +  where [] = <test_app.FakeUiClient object at 0x7f34411b8320>.calls
 
 tests/test_app.py:236: AssertionError
 ________________________ test_inspect_error_is_rendered ________________________
@@ -63,7 +63,7 @@ _______________ test_lifecycle_keys_call_client_with_short_uuid ________________
         assert ("stop", TASK.short_uuid) in client.calls
 >       assert ("information", TASK.short_uuid) in client.calls
 E       AssertionError: assert ('information', '1b17dac7') in [('start', '1b17dac7'), ('stop', '1b17dac7'), ('sync', ''), ('done', '1b17dac7')]
-E        +  where [('start', '1b17dac7'), ('stop', '1b17dac7'), ('sync', ''), ('done', '1b17dac7')] = <test_app.FakeUiClient object at 0x7f3cc3aff1d0>.calls
+E        +  where [('start', '1b17dac7'), ('stop', '1b17dac7'), ('sync', ''), ('done', '1b17dac7')] = <test_app.FakeUiClient object at 0x7f3441d9ad00>.calls
 
 tests/test_app.py:314: AssertionError
 =============================== warnings summary ===============================
@@ -89,4 +89,4 @@ Required test coverage of 95.0% reached. Total coverage: 96.32%
 FAILED tests/test_app.py::test_inspect_success - AssertionError: assert ('inf...
 FAILED tests/test_app.py::test_inspect_error_is_rendered - AssertionError: as...
 FAILED tests/test_app.py::test_lifecycle_keys_call_client_with_short_uuid - A...
-=================== 3 failed, 42 passed, 1 warning in 13.75s ===================
+=================== 3 failed, 42 passed, 1 warning in 13.82s ===================
