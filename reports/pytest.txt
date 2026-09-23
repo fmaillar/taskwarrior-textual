@@ -5,26 +5,28 @@ configfile: pyproject.toml
 testpaths: tests
 plugins: asyncio-1.4.0, cov-7.1.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collected 192 items
+collected 200 items
 
-tests/test_app.py ...................................................... [ 28%]
-.....................................                                    [ 47%]
-tests/test_config.py ........................                            [ 59%]
-tests/test_main.py ..                                                    [ 60%]
-tests/test_models.py ..............                                      [ 68%]
-tests/test_planning.py ...............                                   [ 76%]
+tests/test_app.py ...................................................... [ 27%]
+.....................................                                    [ 45%]
+tests/test_config.py ................................                    [ 61%]
+tests/test_main.py ..                                                    [ 62%]
+tests/test_models.py ..............                                      [ 69%]
+tests/test_planning.py ...............                                   [ 77%]
 tests/test_taskwarrior.py .............................................. [100%]
 
 - generated xml file: /home/fgm/projets/taskwarrior-textual/reports/junit.xml --
 ================================ tests coverage ================================
 _______________ coverage: platform linux, python 3.13.5-final-0 ________________
 
-Name    Stmts   Miss Branch BrPart  Cover   Missing
----------------------------------------------------
-TOTAL    1101      0    272      0   100%
+Name                                Stmts   Miss Branch BrPart  Cover   Missing
+-------------------------------------------------------------------------------
+src/taskwarrior_textual/config.py     115      1     44      1    99%   165
+-------------------------------------------------------------------------------
+TOTAL                                1153      1    296      1    99%
 
-7 files skipped due to complete coverage.
+6 files skipped due to complete coverage.
 Coverage HTML written to dir htmlcov
 Coverage XML written to file reports/coverage.xml
-Required test coverage of 95.0% reached. Total coverage: 100.00%
-======================== 192 passed in 79.56s (0:01:19) ========================
+Required test coverage of 95.0% reached. Total coverage: 99.86%
+======================== 200 passed in 84.06s (0:01:24) ========================
