@@ -15,6 +15,8 @@ TASK = Task(
     priority="L",
     due="20260926T000000Z",
     urgency=9.38,
+    tags=("mail", "rms"),
+    start="20260923T070000Z",
 )
 
 
@@ -28,8 +30,9 @@ class FakeUiClient:
         if self.fail == action:
             raise TaskwarriorError(f"{action} failed")
 
-    def pending(self) -> list[Task]:
-        self._maybe_fail("pending")
+    def view(self, name: str) -> list[Task]:
+        self._maybe_fail("view")
+        self.calls.append(("view", name))
         return self.tasks
 
     def information(self, uuid_prefix: str) -> str:
@@ -90,6 +93,8 @@ async def test_app_mounts_and_displays_pending_task() -> None:
         table = app.query_one("#tasks")
         assert table.row_count == 1
         assert app._selected_task() == TASK
+        assert app.current_view == "pending"
+        assert ("view", "pending") in app.client.calls
 
 
 async def test_selected_task_is_none_with_empty_table() -> None:
@@ -339,13 +344,31 @@ async def test_sync_error_is_rendered() -> None:
         assert "sync failed" in str(app.query_one("#details").render())
 
 
-async def test_pending_error_does_not_crash_app() -> None:
+async def test_view_error_does_not_crash_app() -> None:
     client = FakeUiClient()
-    client.fail = "pending"
+    client.fail = "view"
     app = TaskwarriorApp(client=client)
     async with app.run_test() as pilot:
         await pilot.pause()
-        assert "pending failed" in str(app.query_one("#details").render())
+        assert "view failed" in str(app.query_one("#details").render())
+
+
+async def test_numeric_keys_switch_views_and_refresh() -> None:
+    client = FakeUiClient()
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        for key, expected in [
+            ("2", "waiting"),
+            ("3", "completed"),
+            ("4", "deleted"),
+            ("1", "pending"),
+        ]:
+            await pilot.press(key)
+            await pilot.pause()
+            assert app.current_view == expected
+            assert ("view", expected) in client.calls
 
 
 def test_run_launches_application(monkeypatch) -> None:
