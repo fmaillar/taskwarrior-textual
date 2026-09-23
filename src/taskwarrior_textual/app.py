@@ -1252,6 +1252,17 @@ class TaskwarriorApp(App[None]):
             f"[bold red]Taskwarrior error[/bold red]\n\n{exc}"
         )
 
+    def _expanded_planning_tasks(self) -> list[Task] | None:
+        """Expand external dependencies for planning views."""
+        try:
+            return self.client.expand_dependencies(
+                self.view_tasks,
+                self.planning_settings.dependency_depth,
+            )
+        except TaskwarriorError as exc:
+            self._show_error(exc)
+            return None
+
     def _run_task_action(self, callback) -> None:
         task = self._selected_task()
         if task is None:
@@ -1338,48 +1349,66 @@ class TaskwarriorApp(App[None]):
         self._render_tasks()
 
     def action_show_dependencies(self) -> None:
-        """Show local dependency links for the selected task."""
+        """Show dependency links for the selected task, including external ancestors."""
         task = self._selected_task()
         if task is None:
+            return
+        tasks = self._expanded_planning_tasks()
+        if tasks is None:
             return
         self.push_screen(
             DependencyScreen(
                 f"Dependencies for {task.short_uuid}",
-                self._dependency_summary(task, self.view_tasks),
+                self._dependency_summary(task, tasks),
             )
         )
 
     def action_show_dependency_overview(self) -> None:
-        """Show the local dependency graph structure for the current view."""
+        """Show the dependency graph, expanding external ancestors."""
+        tasks = self._expanded_planning_tasks()
+        if tasks is None:
+            return
         self.push_screen(
-            DependencyOverviewScreen(self._dependency_overview(self.view_tasks))
+            DependencyOverviewScreen(self._dependency_overview(tasks))
         )
 
     def action_show_critical_path(self) -> None:
-        """Show estimate-based critical-path analysis for the current view."""
+        """Show estimate-based critical-path analysis for the expanded graph."""
+        tasks = self._expanded_planning_tasks()
+        if tasks is None:
+            return
         self.push_screen(
             CriticalPathScreen(
-                self._critical_path_summary(self.view_tasks, self.planning_settings)
+                self._critical_path_summary(tasks, self.planning_settings)
             )
         )
 
     def action_show_gantt(self) -> None:
-        """Show an estimate-based local Gantt view for the current view."""
-        self.push_screen(GanttScreen(self._gantt_summary(self.view_tasks)))
+        """Show an estimate-based Gantt view for the expanded graph."""
+        tasks = self._expanded_planning_tasks()
+        if tasks is None:
+            return
+        self.push_screen(GanttScreen(self._gantt_summary(tasks)))
 
     def action_show_calendar_plan(self) -> None:
-        """Show an absolute calendar schedule for the current view."""
+        """Show an absolute calendar schedule for the expanded graph."""
+        tasks = self._expanded_planning_tasks()
+        if tasks is None:
+            return
         self.push_screen(
             CalendarPlanScreen(
-                self._calendar_plan(self.view_tasks, self.planning_settings)
+                self._calendar_plan(tasks, self.planning_settings)
             )
         )
 
     def action_show_constraints(self) -> None:
-        """Show scheduled and due constraints for the current view."""
+        """Show scheduled and due constraints for the expanded graph."""
+        tasks = self._expanded_planning_tasks()
+        if tasks is None:
+            return
         self.push_screen(
             ConstraintsScreen(
-                self._constraints_summary(self.view_tasks, self.planning_settings)
+                self._constraints_summary(tasks, self.planning_settings)
             )
         )
 
