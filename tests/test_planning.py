@@ -442,6 +442,58 @@ def test_build_absolute_schedule_tracks_invalid_due_and_no_anchor() -> None:
     assert schedule.due_slack == {}
 
 
+def test_build_absolute_schedule_skips_dependents_of_invalid_scheduled_task() -> None:
+    invalid_parent = Task(
+        uuid="56565656-1111-2222-3333-444444444444",
+        description="Invalid parent",
+        status="pending",
+        scheduled="20260926T100000Z",
+        estimate_hours=1.0,
+    )
+    child = Task(
+        uuid="78787878-1111-2222-3333-444444444444",
+        description="Blocked child",
+        status="pending",
+        depends=(invalid_parent.uuid,),
+        estimate_hours=1.0,
+    )
+    anchor = Task(
+        uuid="90909090-1111-2222-3333-444444444444",
+        description="Valid anchor",
+        status="pending",
+        scheduled="20260925T080000Z",
+        estimate_hours=1.0,
+    )
+
+    schedule = build_absolute_schedule(
+        build_planning_graph([child, invalid_parent, anchor])
+    )
+
+    assert schedule is not None
+    assert schedule.invalid_scheduled == ("56565656",)
+    assert invalid_parent.uuid not in schedule.starts
+    assert child.uuid not in schedule.starts
+    assert anchor.uuid in schedule.starts
+
+
+def test_build_absolute_schedule_flags_date_only_due_on_nonworking_day() -> None:
+    task = Task(
+        uuid="67676767-1111-2222-3333-444444444444",
+        description="Weekend date deadline",
+        status="pending",
+        scheduled="20260925T080000Z",
+        due="20260927T000000Z",
+        estimate_hours=1.0,
+    )
+
+    schedule = build_absolute_schedule(build_planning_graph([task]))
+
+    assert schedule is not None
+    assert schedule.invalid_due == ("67676767",)
+    assert task.uuid not in schedule.due_slack
+
+
+
 def test_build_absolute_schedule_returns_none_for_cycles() -> None:
     first = Task(
         uuid="aaaaaaaa-1111-2222-3333-444444444444",

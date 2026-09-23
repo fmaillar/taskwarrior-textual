@@ -48,6 +48,7 @@ def test_planning_settings_rejects_invalid_workdays(workdays: tuple[int, ...]) -
         (("12:00", "08:00"),),
         (("08:00", "12:00"), ("11:00", "13:00")),
         (("8am", "12:00"),),
+        (("0800", "12:00"),),
     ],
 )
 
