@@ -20,6 +20,7 @@ def test_task_from_export() -> None:
             "scheduled": "20260924T090000Z",
             "start": "20260923T070000Z",
             "entry": "20260922T120000Z",
+            "estimate": 2.5,
         }
     )
 
@@ -37,6 +38,8 @@ def test_task_from_export() -> None:
     assert task.display_scheduled == "2026-09-24 09:00"
     assert task.display_entry == "2026-09-22 12:00"
     assert task.display_end == ""
+    assert task.estimate_hours == 2.5
+    assert task.display_estimate == "2.50h"
     assert task.active is True
 
 
@@ -56,6 +59,8 @@ def test_task_defaults_for_optional_metadata() -> None:
     assert task.start == ""
     assert task.end == ""
     assert task.entry == ""
+    assert task.estimate_hours == 0.0
+    assert task.display_estimate == ""
     assert task.active is False
     assert task.display_wait == ""
     assert task.display_scheduled == ""
@@ -86,3 +91,17 @@ def test_format_taskwarrior_datetime_preserves_unknown_values() -> None:
 
 def test_format_taskwarrior_datetime_keeps_time_when_present() -> None:
     assert format_taskwarrior_datetime("20260925T143000Z") == "2026-09-25 14:30"
+
+
+def test_estimate_is_coerced_from_export_string() -> None:
+    task = Task.from_export(
+        {
+            "uuid": "87654321-1234-1234-1234-123456789abc",
+            "description": "Estimated",
+            "status": "pending",
+            "estimate": "1.25",
+        }
+    )
+
+    assert task.estimate_hours == 1.25
+    assert task.display_estimate == "1.25h"
