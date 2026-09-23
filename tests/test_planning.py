@@ -1,3 +1,6 @@
+from datetime import datetime
+
+from taskwarrior_textual.config import PlanningSettings
 from taskwarrior_textual.models import Task
 from taskwarrior_textual.planning import (
     build_absolute_schedule,
@@ -311,14 +314,93 @@ def test_build_absolute_schedule_applies_dependencies_scheduled_and_due() -> Non
     assert schedule.finishes[first.uuid].strftime("%H:%M") == "11:00"
     assert schedule.starts[normal.uuid].strftime("%H:%M") == "11:00"
     assert schedule.starts[delayed.uuid].strftime("%H:%M") == "15:00"
-    assert schedule.finishes[delayed.uuid].strftime("%H:%M") == "18:00"
-    assert schedule.late_by[delayed.uuid] == 2.0
+    assert schedule.finishes[delayed.uuid].strftime("%Y-%m-%d %H:%M") == "2026-09-25 09:00"
+    assert schedule.late_by[delayed.uuid] == 17.0
     assert first.uuid not in schedule.late_by
-    assert schedule.due_slack[first.uuid] == 13.0
-    assert schedule.due_slack[delayed.uuid] == -2.0
+    assert schedule.due_slack[first.uuid] == 6.0
+    assert schedule.due_slack[delayed.uuid] == -17.0
     assert schedule.invalid_due == ()
     assert schedule.invalid_scheduled == ()
 
+
+
+
+def test_build_absolute_schedule_uses_configured_working_periods() -> None:
+    task = Task(
+        uuid="abababab-1111-2222-3333-444444444444",
+        description="Custom calendar",
+        status="pending",
+        scheduled="20260925T100000Z",
+        estimate_hours=5.0,
+    )
+    settings = PlanningSettings(
+        timezone="UTC",
+        workdays=(0, 1, 2, 3, 4, 5),
+        work_periods=(("09:00", "12:00"), ("14:00", "18:00")),
+    )
+
+    schedule = build_absolute_schedule(build_planning_graph([task]), settings)
+
+    assert schedule is not None
+    assert schedule.starts[task.uuid] == datetime(2026, 9, 25, 10, 0)
+    assert schedule.finishes[task.uuid] == datetime(2026, 9, 25, 16, 0)
+
+
+def test_build_absolute_schedule_flags_scheduled_outside_working_calendar() -> None:
+    invalid = Task(
+        uuid="cdcdcdcd-1111-2222-3333-444444444444",
+        description="Weekend start",
+        status="pending",
+        scheduled="20260926T100000Z",
+        estimate_hours=1.0,
+    )
+    anchor = Task(
+        uuid="efefefef-1111-2222-3333-444444444444",
+        description="Valid anchor",
+        status="pending",
+        scheduled="20260925T100000Z",
+        estimate_hours=1.0,
+    )
+
+    schedule = build_absolute_schedule(build_planning_graph([invalid, anchor]))
+
+    assert schedule is not None
+    assert schedule.invalid_scheduled == ("cdcdcdcd",)
+    assert invalid.uuid not in schedule.starts
+
+
+def test_build_absolute_schedule_treats_midnight_due_as_end_of_workday() -> None:
+    task = Task(
+        uuid="12121212-1111-2222-3333-444444444444",
+        description="Date deadline",
+        status="pending",
+        scheduled="20260925T080000Z",
+        due="20260925T000000Z",
+        estimate_hours=8.0,
+    )
+
+    schedule = build_absolute_schedule(build_planning_graph([task]))
+
+    assert schedule is not None
+    assert schedule.finishes[task.uuid] == datetime(2026, 9, 25, 17, 0)
+    assert schedule.due_slack[task.uuid] == 0.0
+
+
+def test_build_absolute_schedule_flags_exact_due_outside_working_calendar() -> None:
+    task = Task(
+        uuid="34343434-1111-2222-3333-444444444444",
+        description="Weekend deadline",
+        status="pending",
+        scheduled="20260925T080000Z",
+        due="20260927T120000Z",
+        estimate_hours=1.0,
+    )
+
+    schedule = build_absolute_schedule(build_planning_graph([task]))
+
+    assert schedule is not None
+    assert schedule.invalid_due == ("34343434",)
+    assert task.uuid not in schedule.due_slack
 
 def test_build_absolute_schedule_tracks_invalid_due_and_no_anchor() -> None:
     no_anchor = Task(
