@@ -1,0 +1,103 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.5, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/fgm/projets/taskwarrior-textual
+configfile: pyproject.toml
+testpaths: tests
+plugins: asyncio-1.4.0, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 32 items
+
+tests/test_app.py ........FFFF..                                         [ 43%]
+tests/test_models.py ...                                                 [ 53%]
+tests/test_taskwarrior.py ...............
+ERROR: Coverage failure: total of 79 is less than fail-under=95
+                                                                         [100%]
+
+=================================== FAILURES ===================================
+__________________ test_delete_key_opens_confirmation_screen ___________________
+
+    async def test_delete_key_opens_confirmation_screen() -> None:
+        app = TaskwarriorApp(client=FakeUiClient())
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("D")
+            await pilot.pause()
+>           assert isinstance(app.screen, ConfirmDelete)
+E           AssertionError: assert False
+E            +  where False = isinstance(Screen(id='_default'), ConfirmDelete)
+E            +    where Screen(id='_default') = TaskwarriorApp(title='Taskwarrior Textual', classes={'-dark-mode'}, pseudo_classes={'dark', 'focus'}).screen
+
+tests/test_app.py:169: AssertionError
+____________________ test_delete_confirmation_calls_client _____________________
+
+    async def test_delete_confirmation_calls_client() -> None:
+        client = FakeUiClient()
+        app = TaskwarriorApp(client=client)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("D")
+            await pilot.pause()
+            screen = app.screen
+>           screen.on_button_pressed(Button.Pressed(screen.query_one("#delete", Button)))
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'Screen' object has no attribute 'on_button_pressed'
+
+tests/test_app.py:181: AttributeError
+___________________ test_delete_cancel_does_not_call_client ____________________
+
+    async def test_delete_cancel_does_not_call_client() -> None:
+        client = FakeUiClient()
+        app = TaskwarriorApp(client=client)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("D")
+            await pilot.pause()
+            screen = app.screen
+>           screen.on_button_pressed(Button.Pressed(screen.query_one("#cancel", Button)))
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'Screen' object has no attribute 'on_button_pressed'
+
+tests/test_app.py:194: AttributeError
+_______________ test_lifecycle_keys_call_client_with_short_uuid ________________
+
+    async def test_lifecycle_keys_call_client_with_short_uuid() -> None:
+        client = FakeUiClient()
+        app = TaskwarriorApp(client=client)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("s")
+            await pilot.press("x")
+            await pilot.press("d")
+            await pilot.press("enter")
+            await pilot.press("y")
+            await pilot.pause()
+        assert ("start", TASK.short_uuid) in client.calls
+        assert ("stop", TASK.short_uuid) in client.calls
+        assert ("done", TASK.short_uuid) in client.calls
+>       assert ("information", TASK.short_uuid) in client.calls
+E       AssertionError: assert ('information', '1b17dac7') in [('start', '1b17dac7'), ('stop', '1b17dac7'), ('done', '1b17dac7'), ('sync', '')]
+E        +  where [('start', '1b17dac7'), ('stop', '1b17dac7'), ('done', '1b17dac7'), ('sync', '')] = <test_app.FakeUiClient object at 0x7f0f6dc25f50>.calls
+
+tests/test_app.py:213: AssertionError
+- generated xml file: /home/fgm/projets/taskwarrior-textual/reports/junit.xml --
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.13.5-final-0 ________________
+
+Name                                  Stmts   Miss Branch BrPart  Cover   Missing
+---------------------------------------------------------------------------------
+src/taskwarrior_textual/__main__.py       5      5      2      0     0%   3-12
+src/taskwarrior_textual/app.py          164     43     24      5    71%   63->exit, 98-103, 106, 153, 165, 201-209, 219-221, 230, 234, 237-239, 254-268, 273-275, 282
+src/taskwarrior_textual/models.py        32      1      4      1    94%   13
+---------------------------------------------------------------------------------
+TOTAL                                   261     49     38      6    79%
+
+2 files skipped due to complete coverage.
+Coverage HTML written to dir htmlcov
+Coverage XML written to file reports/coverage.xml
+FAIL Required test coverage of 95.0% not reached. Total coverage: 78.93%
+=========================== short test summary info ============================
+FAILED tests/test_app.py::test_delete_key_opens_confirmation_screen - Asserti...
+FAILED tests/test_app.py::test_delete_confirmation_calls_client - AttributeEr...
+FAILED tests/test_app.py::test_delete_cancel_does_not_call_client - Attribute...
+FAILED tests/test_app.py::test_lifecycle_keys_call_client_with_short_uuid - A...
+========================= 4 failed, 28 passed in 7.28s =========================

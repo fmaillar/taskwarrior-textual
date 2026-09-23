@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="32" time="7.286" timestamp="2026-09-23T10:11:43.168920+02:00" hostname="m710s"><testcase classname="tests.test_app" name="test_task_form_can_hold_an_existing_task" time="0.002" /><testcase classname="tests.test_app" name="test_delete_confirmation_can_hold_a_task" time="0.001" /><testcase classname="tests.test_app" name="test_app_mounts_and_displays_pending_task" time="0.330" /><testcase classname="tests.test_app" name="test_edit_key_opens_prefilled_task_form" time="0.663" /><testcase classname="tests.test_app" name="test_add_form_save_calls_client" time="0.784" /><testcase classname="tests.test_app" name="test_add_form_cancel_does_not_call_client" time="0.783" /><testcase classname="tests.test_app" name="test_edit_form_save_calls_modify" time="0.823" /><testcase classname="tests.test_app" name="test_empty_description_does_not_close_form" time="0.720" /><testcase classname="tests.test_app" name="test_delete_key_opens_confirmation_screen" time="0.418"><failure message="AssertionError: assert False&#10; +  where False = isinstance(Screen(id='_default'), ConfirmDelete)&#10; +    where Screen(id='_default') = TaskwarriorApp(title='Taskwarrior Textual', classes={'-dark-mode'}, pseudo_classes={'dark', 'focus'}).screen">async def test_delete_key_opens_confirmation_screen() -&gt; None:
+        app = TaskwarriorApp(client=FakeUiClient())
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("D")
+            await pilot.pause()
+&gt;           assert isinstance(app.screen, ConfirmDelete)
+E           AssertionError: assert False
+E            +  where False = isinstance(Screen(id='_default'), ConfirmDelete)
+E            +    where Screen(id='_default') = TaskwarriorApp(title='Taskwarrior Textual', classes={'-dark-mode'}, pseudo_classes={'dark', 'focus'}).screen
+
+tests/test_app.py:169: AssertionError</failure></testcase><testcase classname="tests.test_app" name="test_delete_confirmation_calls_client" time="0.420"><failure message="AttributeError: 'Screen' object has no attribute 'on_button_pressed'">async def test_delete_confirmation_calls_client() -&gt; None:
+        client = FakeUiClient()
+        app = TaskwarriorApp(client=client)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("D")
+            await pilot.pause()
+            screen = app.screen
+&gt;           screen.on_button_pressed(Button.Pressed(screen.query_one("#delete", Button)))
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'Screen' object has no attribute 'on_button_pressed'
+
+tests/test_app.py:181: AttributeError</failure></testcase><testcase classname="tests.test_app" name="test_delete_cancel_does_not_call_client" time="0.357"><failure message="AttributeError: 'Screen' object has no attribute 'on_button_pressed'">async def test_delete_cancel_does_not_call_client() -&gt; None:
+        client = FakeUiClient()
+        app = TaskwarriorApp(client=client)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("D")
+            await pilot.pause()
+            screen = app.screen
+&gt;           screen.on_button_pressed(Button.Pressed(screen.query_one("#cancel", Button)))
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'Screen' object has no attribute 'on_button_pressed'
+
+tests/test_app.py:194: AttributeError</failure></testcase><testcase classname="tests.test_app" name="test_lifecycle_keys_call_client_with_short_uuid" time="0.808"><failure message="AssertionError: assert ('information', '1b17dac7') in [('start', '1b17dac7'), ('stop', '1b17dac7'), ('done', '1b17dac7'), ('sync', '')]&#10; +  where [('start', '1b17dac7'), ('stop', '1b17dac7'), ('done', '1b17dac7'), ('sync', '')] = &lt;test_app.FakeUiClient object at 0x7f0f6dc25f50&gt;.calls">async def test_lifecycle_keys_call_client_with_short_uuid() -&gt; None:
+        client = FakeUiClient()
+        app = TaskwarriorApp(client=client)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("s")
+            await pilot.press("x")
+            await pilot.press("d")
+            await pilot.press("enter")
+            await pilot.press("y")
+            await pilot.pause()
+        assert ("start", TASK.short_uuid) in client.calls
+        assert ("stop", TASK.short_uuid) in client.calls
+        assert ("done", TASK.short_uuid) in client.calls
+&gt;       assert ("information", TASK.short_uuid) in client.calls
+E       AssertionError: assert ('information', '1b17dac7') in [('start', '1b17dac7'), ('stop', '1b17dac7'), ('done', '1b17dac7'), ('sync', '')]
+E        +  where [('start', '1b17dac7'), ('stop', '1b17dac7'), ('done', '1b17dac7'), ('sync', '')] = &lt;test_app.FakeUiClient object at 0x7f0f6dc25f50&gt;.calls
+
+tests/test_app.py:213: AssertionError</failure></testcase><testcase classname="tests.test_app" name="test_backend_error_is_rendered_in_details" time="0.417" /><testcase classname="tests.test_app" name="test_pending_error_does_not_crash_app" time="0.306" /><testcase classname="tests.test_models" name="test_task_from_export" time="0.001" /><testcase classname="tests.test_models" name="test_format_taskwarrior_datetime_preserves_unknown_values" time="0.001" /><testcase classname="tests.test_models" name="test_format_taskwarrior_datetime_keeps_time_when_present" time="0.001" /><testcase classname="tests.test_taskwarrior" name="test_pending_parses_export" time="0.001" /><testcase classname="tests.test_taskwarrior" name="test_export_rejects_invalid_json" time="0.001" /><testcase classname="tests.test_taskwarrior" name="test_export_rejects_non_array_json" time="0.001" /><testcase classname="tests.test_taskwarrior" name="test_lifecycle_commands_use_uuid_prefix" time="0.001" /><testcase classname="tests.test_taskwarrior" name="test_information_uses_uuid_prefix" time="0.001" /><testcase classname="tests.test_taskwarrior" name="test_add_builds_attributes" time="0.001" /><testcase classname="tests.test_taskwarrior" name="test_add_omits_empty_attributes" time="0.001" /><testcase classname="tests.test_taskwarrior" name="test_modify_replaces_editable_fields" time="0.001" /><testcase classname="tests.test_taskwarrior" name="test_modify_can_clear_optional_fields" time="0.001" /><testcase classname="tests.test_taskwarrior" name="test_client_uses_environment_override" time="0.001" /><testcase classname="tests.test_taskwarrior" name="test_client_uses_path_when_no_override" time="0.001" /><testcase classname="tests.test_taskwarrior" name="test_client_errors_when_task_is_missing" time="0.001" /><testcase classname="tests.test_taskwarrior" name="test_run_returns_stdout" time="0.001" /><testcase classname="tests.test_taskwarrior" name="test_run_raises_on_nonzero_exit" time="0.001" /><testcase classname="tests.test_taskwarrior" name="test_run_wraps_oserror" time="0.001" /></testsuite></testsuites>
