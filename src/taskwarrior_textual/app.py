@@ -1423,7 +1423,6 @@ class TaskwarriorApp(App[None]):
                 projects.items(),
                 key=lambda item: (-item[1], item[0].casefold()),
             )
-            if hours > 0
         )
         return "\n".join(lines)
 
