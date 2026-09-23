@@ -376,9 +376,19 @@ It runs:
 2. mypy over the package;
 3. pytest in parallel;
 4. statement and branch coverage with a required 100%;
-5. wheel and source-distribution builds.
+5. wheel and source-distribution builds;
+6. package-content checks;
+7. installation of the built wheel in a clean virtual environment and a CLI
+   version check.
 
-GitHub Actions runs the same gate on Python 3.11 and Python 3.13.
+GitHub Actions uses one full gate on Python 3.13 and a lighter compatibility
+test run on Python 3.11. This avoids duplicating lint, typing, coverage, and
+package-build work while still exercising the supported minimum Python version.
+
+CI runs for pull requests targeting `main` and for pushes to `main` in the
+private development repository. Stale runs for the same branch/PR are cancelled
+automatically. The public mirror keeps the workflow file for reproducibility,
+but its jobs are skipped.
 
 If CI is green on the exact commit under review, there is normally no reason to
 rerun the same gate manually merely for confirmation.
@@ -391,6 +401,8 @@ make typecheck
 make test
 make test-serial
 make package
+make verify-package
+make test-compat
 ```
 
 `make test-serial` is useful when debugging ordering, asynchronous, or
@@ -430,22 +442,36 @@ rather than crashing when possible.
 Do not catch broad exceptions unless the layer can actually recover or add
 useful context.
 
-## 18. Release checklist
+## 18. Release and publication workflow
 
-For a future tagged release:
+The development repository is private. The public
+`fmaillar/taskwarrior-textual` repository is a publication mirror containing
+validated Git history, tags, and release material only. Pull requests, review
+automation, and development-only branches stay private.
 
-1. ensure `main` is green on all supported Python versions;
+The expected local remotes are:
+
+```text
+origin  -> private development repository
+public  -> public publication mirror
+```
+
+For a tagged release:
+
+1. ensure private `main` is green;
 2. review user-visible documentation and `?` help;
-3. update the project version in `pyproject.toml` and package version source if
-   required by the current versioning scheme;
-4. run or verify the CI quality gate;
-5. build the wheel and sdist;
-6. inspect package contents;
-7. create the release commit;
-8. tag the exact release commit;
-9. publish artifacts through the chosen release channel.
+3. confirm the version in `pyproject.toml` and `taskwarrior_textual.__version__`;
+4. confirm `CHANGELOG.md`;
+5. build and verify the package through the CI quality gate;
+6. tag the exact validated `main` commit;
+7. push the tag to `origin`;
+8. run `make publish` from a clean local `main`.
 
-Do not tag a commit whose CI has not passed.
+`make publish` intentionally does not rerun the quality gate. It requires
+`main`, a clean worktree, and `HEAD == origin/main`, then pushes only
+`main` and tags to the configured public remote.
+
+Do not tag or publish a commit whose private CI has not passed.
 
 ## 19. Refactoring policy
 

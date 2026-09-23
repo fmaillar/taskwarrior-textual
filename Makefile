@@ -12,10 +12,11 @@ COVERAGE := $(VENV)/bin/coverage
 PYTEST_JOBS ?= auto
 INSTALL_STAMP := $(VENV)/.taskwarrior-textual-installed
 PACKAGE_TEST_VENV := .venv-package-test
+PUBLISH_REMOTE ?= public
 
 REPORT_DIR := reports
 
-.PHONY: help venv install reinstall test test-serial coverage report lint typecheck package verify-package check push-reports clean
+.PHONY: help venv install reinstall test test-compat test-serial coverage report lint typecheck package verify-package check publish push-reports clean
 
 help:
 	@printf '%s\n' \
@@ -23,6 +24,7 @@ help:
 	  'make install       Install only when pyproject.toml changed' \
 	  'make reinstall     Force reinstall project + development dependencies' \
 	  'make test          Run pytest in parallel with the configured coverage gate' \
+	  'make test-compat   Run tests without duplicate coverage work' \
 	  'make test-serial   Run pytest sequentially for debugging' \
 	  'make coverage      Run parallel tests and generate coverage reports' \
 	  'make report        Generate Ruff + pytest/coverage reports and statuses' \
@@ -30,7 +32,8 @@ help:
 	  'make typecheck     Run mypy over the package' \
 	  'make package       Build wheel and source distribution' \
 	  'make verify-package  Verify wheel installation in a clean virtualenv' \
-	  'make check         Run Ruff, mypy, tests/coverage, and package build' \
+	  'make check         Run Ruff, mypy, tests/coverage, and package verification' \
+	  'make publish       Publish validated main + tags to the public remote' \
 	  'make push-reports  Always commit/push reports, even when tests fail' \
 	  'make clean         Remove generated local artifacts'
 
@@ -49,6 +52,9 @@ reinstall: venv
 
 test: install
 	$(PYTEST) -n "$(PYTEST_JOBS)"
+
+test-compat: install
+	$(PYTEST) -n "$(PYTEST_JOBS)" --no-cov
 
 test-serial: install
 	$(PYTEST)
@@ -98,18 +104,23 @@ package: install
 	$(BUILD)
 
 verify-package: package
+	$(VENV)/bin/python -c 'from pathlib import Path; import tarfile, zipfile; s=next(Path("dist").glob("*.tar.gz")); w=next(Path("dist").glob("*.whl")); tf=tarfile.open(s); sn=tf.getnames(); zf=zipfile.ZipFile(w); wn=zf.namelist(); assert any(n.endswith("/LICENSE") for n in sn); assert any(n.endswith("/README.md") for n in sn); assert any("/docs/" in n for n in sn); assert any(n.endswith(".dist-info/licenses/LICENSE") for n in wn); assert "taskwarrior_textual/__init__.py" in wn'
 	rm -rf "$(PACKAGE_TEST_VENV)"
 	$(PYTHON) -m venv "$(PACKAGE_TEST_VENV)"
 	"$(PACKAGE_TEST_VENV)/bin/pip" install dist/*.whl
-	@expected=$$($(VENV)/bin/python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])'); \
-	actual=$$("$(PACKAGE_TEST_VENV)/bin/taskwarrior-textual" --version); \
-	test "$$actual" = "taskwarrior-textual $$expected" || { \
-		echo "Package version mismatch: expected taskwarrior-textual $$expected, got $$actual"; \
-		exit 1; \
-	}
+	$(VENV)/bin/python -c 'import subprocess, tomllib; expected=tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]; actual=subprocess.check_output(["$(PACKAGE_TEST_VENV)/bin/taskwarrior-textual", "--version"], text=True).strip(); assert actual == f"taskwarrior-textual {expected}", f"expected taskwarrior-textual {expected}, got {actual}"'
 	rm -rf "$(PACKAGE_TEST_VENV)"
 
 check: report verify-package
+
+publish:
+	@test "$(git branch --show-current)" = "main" || { echo "publish requires main"; exit 1; }
+	@test -z "$(git status --porcelain)" || { echo "publish requires a clean working tree"; exit 1; }
+	@git remote get-url "$(PUBLISH_REMOTE)" >/dev/null 2>&1 || { echo "missing remote: $(PUBLISH_REMOTE)"; exit 1; }
+	@git fetch origin main
+	@test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" || { echo "local main is not origin/main"; exit 1; }
+	git push "$(PUBLISH_REMOTE)" main
+	git push "$(PUBLISH_REMOTE)" --tags
 push-reports: install
 	@set +e; \
 	$(MAKE) --no-print-directory report; \

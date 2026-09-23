@@ -1,6 +1,6 @@
 # taskwarrior-textual
 
-A Textual TUI for Taskwarrior 3, intended to grow from a fast task browser/editor into a project-planning cockpit with reports, Gantt views and critical-path analysis.
+A Textual TUI for Taskwarrior 3 with task management, project planning, dependency analysis, calendar scheduling, Timewarrior effort tracking, and an interactive project cockpit.
 
 ## Design
 
@@ -32,7 +32,14 @@ The README is the short project overview. Full documentation lives in
 
 The in-application key reference is always available with `?`.
 
-## Current MVP
+Project files:
+
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [License](LICENSE)
+
+## Features
 
 - discover the `task` executable from `PATH`
 - override it with `TASKWARRIOR_COMMAND`
@@ -213,10 +220,11 @@ capacity = 2
 Omitted keys keep the built-in defaults. Invalid values and unknown `[planning]`
 keys are rejected at startup instead of being silently ignored.
 
-## Roadmap
+## Status
 
-Next: richer planning navigation/editing, packaging polish, and a stable tagged
-release.
+Version `0.1.0` is the first release line. Development happens in a private
+development repository; the public repository is a clean publication mirror of
+validated `main` and release tags.
 
 ## License
 
