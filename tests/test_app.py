@@ -1535,6 +1535,20 @@ def test_project_overview_handles_empty_view() -> None:
     assert TaskwarriorApp._project_overview([]) == "No tasks in current view."
 
 
+async def test_project_overview_does_not_open_when_timewarrior_fails() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    client.fail = "timewarrior_hours"
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+p")
+        await pilot.pause()
+
+        assert not isinstance(app.screen, ProjectOverviewScreen)
+        assert "timewarrior_hours failed" in str(app.query_one("#details").render())
+
+
 async def test_project_overview_key_opens_local_screen_without_refetch() -> None:
     client = FakeUiClient(tasks=SEARCH_TASKS)
     app = TaskwarriorApp(client=client)
