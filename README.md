@@ -54,6 +54,8 @@ g       selected-task dependencies
 G       dependency graph
 C       critical path
 H       Gantt
+I       planning health report
+S       auto-schedule selected project (preview/apply)
 L       calendar plan
 K       scheduling constraints
 M       milestones
@@ -63,6 +65,19 @@ T       Timewarrior effort report
 R       Timewarrior trend (7/30 days, week, month)
 q       quit
 ```
+
+## Command-line checks
+
+The executable can perform release/configuration checks without starting Textual:
+
+```sh
+taskwarrior-textual --version
+taskwarrior-textual --config-path
+taskwarrior-textual --check-config
+```
+
+`--check-config` validates the resolved TOML file and exits nonzero with a concise
+configuration error when it is invalid.
 
 ## Development
 
@@ -119,6 +134,21 @@ the dependency candidates available from the expanded planning graph, resolves p
 to full UUIDs, and rejects self-dependencies, unknown or ambiguous prefixes, and edits
 that would introduce a dependency cycle.
 
+## Auto-scheduling and planning health
+
+Press `S` on a selected task to build an auto-schedule proposal for that task's
+project. The proposal starts from the current working instant, honors dependency
+order, existing later `scheduled` constraints, configured working periods and
+capacity, and uses Timewarrior remaining effort. Only unscheduled, inactive
+project tasks are proposed for modification; external dependencies participate
+in the calculation but are never modified. Nothing is written until the proposal
+is explicitly applied.
+
+Press `I` for a planning-health report over the expanded current view. It checks
+dependency cycles and cycle-blocked tasks, unresolved dependencies, missing
+estimates, invalid `scheduled`/`due` values, projected deadline lateness and
+Timewarrior effort overruns.
+
 ## Project dashboard
 
 Press `O` on a selected task to open a consolidated dashboard for that task's
@@ -159,8 +189,8 @@ keys are rejected at startup instead of being silently ignored.
 
 ## Roadmap
 
-Next: richer planning navigation/editing, packaging, release hardening, and a stable
-tagged release.
+Next: richer planning navigation/editing, packaging polish, and a stable tagged
+release.
 
 ## License
 
