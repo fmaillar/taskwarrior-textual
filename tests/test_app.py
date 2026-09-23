@@ -2351,6 +2351,63 @@ def test_planning_health_reports_all_issue_classes() -> None:
     assert "Overtracked estimates: 85858585 +1.00h" in summary
 
 
+def test_planning_health_reports_cycle_blocked_and_nonworking_due() -> None:
+    first = Task(
+        uuid="89898989-1111-1111-1111-111111111111",
+        description="First",
+        status="pending",
+        depends=("90909090-1111-1111-1111-111111111111",),
+        estimate_hours=1.0,
+    )
+    second = Task(
+        uuid="90909090-1111-1111-1111-111111111111",
+        description="Second",
+        status="pending",
+        depends=(first.uuid,),
+        estimate_hours=1.0,
+    )
+    blocked = Task(
+        uuid="91919191-1111-1111-1111-111111111111",
+        description="Blocked",
+        status="pending",
+        depends=(first.uuid,),
+        due="20260927T000000Z",
+        estimate_hours=1.0,
+    )
+
+    summary = TaskwarriorApp._planning_health(
+        [blocked, second, first],
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+        tracked_hours={},
+    )
+
+    assert "Blocked by cycle: 1" in summary
+    assert "Blocked by cycle: 91919191" in summary
+    assert "Invalid due: 1" in summary
+    assert "Invalid due: 91919191" in summary
+
+
+def test_planning_health_reports_nonworking_exact_due() -> None:
+    task = Task(
+        uuid="92929292-1111-1111-1111-111111111111",
+        description="Bad exact due",
+        status="pending",
+        due="20260923T120000Z",
+        estimate_hours=1.0,
+    )
+
+    summary = TaskwarriorApp._planning_health(
+        [task],
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+        tracked_hours={},
+    )
+
+    assert "Invalid due: 1" in summary
+    assert "Invalid due: 92929292" in summary
+
+
 def test_planning_health_reports_projected_lateness() -> None:
     task = Task(
         uuid="86868686-1111-1111-1111-111111111111",
@@ -2612,6 +2669,84 @@ async def test_schedule_proposal_cancel_makes_no_changes() -> None:
         await pilot.pause()
 
         assert client.scheduled_values == []
+
+
+async def test_schedule_proposal_noops_without_selection_and_handles_apply_failure() -> None:
+    empty_client = FakeUiClient(tasks=[])
+    empty_app = TaskwarriorApp(client=empty_client)
+
+    async with empty_app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+s")
+        await pilot.pause()
+        assert not isinstance(empty_app.screen, ScheduleProposalScreen)
+
+    task = Task(
+        uuid="72727272-1111-1111-1111-111111111111",
+        description="Task",
+        status="pending",
+        project="Infra",
+        estimate_hours=1.0,
+    )
+    failing_client = FakeUiClient(tasks=[task])
+    failing_client.fail = "modify_scheduled"
+    failing_app = TaskwarriorApp(
+        client=failing_client,
+        planning_settings=PlanningSettings(timezone="UTC"),
+    )
+
+    async with failing_app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+s")
+        await pilot.pause()
+        assert isinstance(failing_app.screen, ScheduleProposalScreen)
+        failing_app.screen.on_button_pressed(
+            Button.Pressed(
+                failing_app.screen.query_one("#schedule-apply", Button)
+            )
+        )
+        await pilot.pause()
+
+        assert "modify_scheduled failed" in str(
+            failing_app.query_one("#details").render()
+        )
+        assert failing_client.calls.count(("view", "pending")) >= 2
+
+
+async def test_schedule_proposal_apply_skips_project_tasks_without_changes() -> None:
+    fixed = Task(
+        uuid="73737373-1111-1111-1111-111111111111",
+        description="Fixed",
+        status="pending",
+        project="Infra",
+        scheduled="20260924T090000Z",
+        estimate_hours=1.0,
+    )
+    unscheduled = Task(
+        uuid="74747474-1111-1111-1111-111111111111",
+        description="Unscheduled",
+        status="pending",
+        project="Infra",
+        estimate_hours=1.0,
+    )
+    client = FakeUiClient(tasks=[fixed, unscheduled])
+    app = TaskwarriorApp(
+        client=client,
+        planning_settings=PlanningSettings(timezone="UTC"),
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+s")
+        await pilot.pause()
+        assert isinstance(app.screen, ScheduleProposalScreen)
+        app.screen.on_button_pressed(
+            Button.Pressed(app.screen.query_one("#schedule-apply", Button))
+        )
+        await pilot.pause()
+
+        assert len(client.scheduled_values) == 1
+        assert client.scheduled_values[0][0] == unscheduled.short_uuid
 
 
 async def test_schedule_proposal_handles_dependency_or_timewarrior_failure() -> None:
