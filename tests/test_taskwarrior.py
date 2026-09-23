@@ -178,3 +178,38 @@ def test_run_wraps_oserror(monkeypatch) -> None:
     client = TaskwarriorClient(command="/bin/task")
     with pytest.raises(TaskwarriorError, match="Cannot execute"):
         client._run(["list"])
+
+
+class ViewRecordingClient(TaskwarriorClient):
+    def __post_init__(self) -> None:
+        self.command = "task"
+        self.filters = []
+
+    def export(self, *filters: str):
+        self.filters.append(filters)
+        return []
+
+
+@pytest.mark.parametrize(
+    ("view_name", "expected_filter"),
+    [
+        ("pending", "status:pending"),
+        ("waiting", "status:waiting"),
+        ("completed", "status:completed"),
+        ("deleted", "status:deleted"),
+    ],
+)
+def test_named_views_map_to_explicit_taskwarrior_filters(
+    view_name: str, expected_filter: str
+) -> None:
+    client = ViewRecordingClient()
+
+    assert client.view(view_name) == []
+    assert client.filters == [(expected_filter,)]
+
+
+def test_unknown_view_is_rejected() -> None:
+    client = ViewRecordingClient()
+
+    with pytest.raises(ValueError, match="Unknown task view"):
+        client.view("nonsense")
