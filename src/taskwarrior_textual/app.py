@@ -211,6 +211,37 @@ class DependencyScreen(ModalScreen[None]):
         self.dismiss(None)
 
 
+class ProjectOverviewScreen(ModalScreen[None]):
+    """Read-only local project summary for the current view."""
+
+    BINDINGS = [("escape", "close", "Close")]
+
+    CSS = """
+    ProjectOverviewScreen { align: center middle; }
+    #project-overview-box {
+        width: 80%;
+        max-width: 100;
+        height: auto;
+        max-height: 80%;
+        padding: 1 2;
+        border: round $accent;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, body: str) -> None:
+        super().__init__()
+        self.body = body
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="project-overview-box"):
+            yield Label("Project overview")
+            yield Static(self.body, id="project-overview-body")
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 class ConfirmDelete(ModalScreen[bool]):
     """Confirm deletion of a task."""
 
@@ -269,6 +300,7 @@ class TaskwarriorApp(App[None]):
         ("p", "filter_project", "Project"),
         ("b", "toggle_blocked", "Blocked"),
         ("g", "show_dependencies", "Dependencies"),
+        ("shift+p", "show_project_overview", "Projects"),
     ]
 
     SORT_CYCLE = (None, "urgency", "when", "project", "priority")
@@ -466,6 +498,37 @@ class TaskwarriorApp(App[None]):
             return "No dependencies in current view."
         return "\n\n".join(sections)
 
+    @staticmethod
+    def _project_overview(tasks: list[Task]) -> str:
+        """Summarize task counts and urgency by project for the current view."""
+        if not tasks:
+            return "No tasks in current view."
+
+        summary: dict[str, dict[str, float | int]] = {}
+        for task in tasks:
+            project = task.project or "(none)"
+            stats = summary.setdefault(
+                project,
+                {"tasks": 0, "active": 0, "blocked": 0, "urgency": 0.0},
+            )
+            stats["tasks"] += 1
+            stats["active"] += int(task.active)
+            stats["blocked"] += int(bool(task.depends))
+            stats["urgency"] += task.urgency
+
+        projects = sorted(
+            summary,
+            key=lambda project: (project == "(none)", project.casefold()),
+        )
+        lines = ["Project | Tasks | Active | Blocked | Urgency"]
+        for project in projects:
+            stats = summary[project]
+            lines.append(
+                f"{project} | {stats['tasks']} | {stats['active']} | "
+                f"{stats['blocked']} | {stats['urgency']:.2f}"
+            )
+        return "\n".join(lines)
+
     def _selected_task(self) -> Task | None:
         table = self.query_one("#tasks", DataTable)
         if table.row_count == 0:
@@ -552,6 +615,10 @@ class TaskwarriorApp(App[None]):
                 self._dependency_summary(task, self.view_tasks),
             )
         )
+
+    def action_show_project_overview(self) -> None:
+        """Show a local project summary for the currently loaded view."""
+        self.push_screen(ProjectOverviewScreen(self._project_overview(self.view_tasks)))
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Inspect the row activated with Enter in the task table."""
