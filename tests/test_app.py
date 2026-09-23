@@ -5,6 +5,7 @@ from textual.widgets import Button, Input
 from taskwarrior_textual import app as app_module
 from taskwarrior_textual.app import (
     ConfirmDelete,
+    CriticalPathScreen,
     DependencyOverviewScreen,
     DependencyScreen,
     ProjectFilterForm,
@@ -374,6 +375,147 @@ async def test_dependency_overview_key_opens_local_screen_without_refetch() -> N
         await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(app.screen, DependencyOverviewScreen)
+
+
+def test_critical_path_summary_computes_schedule_and_slack() -> None:
+    foundation = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Foundation",
+        status="pending",
+        estimate_hours=2.0,
+    )
+    long_branch = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="Long branch",
+        status="pending",
+        depends=(foundation.uuid,),
+        estimate_hours=3.0,
+    )
+    short_branch = Task(
+        uuid="33333333-3333-3333-3333-333333333333",
+        description="Short branch",
+        status="pending",
+        depends=(foundation.uuid,),
+        estimate_hours=1.0,
+    )
+    finish = Task(
+        uuid="44444444-4444-4444-4444-444444444444",
+        description="Finish",
+        status="pending",
+        depends=(long_branch.uuid, short_branch.uuid),
+        estimate_hours=4.0,
+    )
+    independent = Task(
+        uuid="55555555-5555-5555-5555-555555555555",
+        description="Independent",
+        status="pending",
+        estimate_hours=2.0,
+    )
+
+    summary = TaskwarriorApp._critical_path_summary(
+        [finish, independent, short_branch, long_branch, foundation]
+    )
+
+    assert "Project duration: 9.00h" in summary
+    assert "Critical path: 11111111 -> 22222222 -> 44444444" in summary
+    assert "11111111 | 2.00h | 0.00 | 2.00 | 0.00 | yes" in summary
+    assert "22222222 | 3.00h | 2.00 | 5.00 | 0.00 | yes" in summary
+    assert "33333333 | 1.00h | 2.00 | 3.00 | 2.00 | no" in summary
+    assert "44444444 | 4.00h | 5.00 | 9.00 | 0.00 | yes" in summary
+    assert "55555555 | 2.00h | 0.00 | 2.00 | 7.00 | no" in summary
+
+
+def test_critical_path_summary_treats_missing_estimates_as_zero() -> None:
+    first = Task(
+        uuid="aaaaaaaa-1111-2222-3333-444444444444",
+        description="Unknown estimate",
+        status="pending",
+    )
+    second = Task(
+        uuid="bbbbbbbb-1111-2222-3333-444444444444",
+        description="Known estimate",
+        status="pending",
+        depends=(first.uuid,),
+        estimate_hours=1.5,
+    )
+
+    summary = TaskwarriorApp._critical_path_summary([second, first])
+
+    assert "Project duration: 1.50h" in summary
+    assert "Unestimated tasks treated as 0h: aaaaaaaa" in summary
+    assert "Critical path: aaaaaaaa -> bbbbbbbb" in summary
+
+
+def test_critical_path_summary_reports_unresolved_dependencies() -> None:
+    task = Task(
+        uuid="aaaaaaaa-1111-2222-3333-444444444444",
+        description="External dependency",
+        status="pending",
+        depends=("99999999-aaaa-bbbb-cccc-dddddddddddd",),
+        estimate_hours=2.0,
+    )
+
+    summary = TaskwarriorApp._critical_path_summary([task])
+
+    assert "Unresolved dependencies ignored: aaaaaaaa -> 99999999" in summary
+    assert "Project duration: 2.00h" in summary
+
+
+def test_critical_path_summary_refuses_cycles_and_handles_empty_view() -> None:
+    first = Task(
+        uuid="aaaaaaaa-1111-2222-3333-444444444444",
+        description="First",
+        status="pending",
+        depends=("bbbbbbbb-1111-2222-3333-444444444444",),
+        estimate_hours=1.0,
+    )
+    second = Task(
+        uuid="bbbbbbbb-1111-2222-3333-444444444444",
+        description="Second",
+        status="pending",
+        depends=(first.uuid,),
+        estimate_hours=1.0,
+    )
+
+    summary = TaskwarriorApp._critical_path_summary([first, second])
+
+    assert "Critical path unavailable: dependency cycle detected." in summary
+    assert TaskwarriorApp._critical_path_summary([]) == "No tasks in current view."
+
+
+async def test_critical_path_key_opens_local_screen_without_refetch() -> None:
+    first = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="First",
+        status="pending",
+        estimate_hours=2.0,
+    )
+    second = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="Second",
+        status="pending",
+        depends=(first.uuid,),
+        estimate_hours=3.0,
+    )
+    client = FakeUiClient(tasks=[second, first])
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial_view_calls = client.calls.count(("view", "pending"))
+
+        await pilot.press("shift+c")
+        await pilot.pause()
+
+        assert isinstance(app.screen, CriticalPathScreen)
+        body = str(app.screen.query_one("#critical-path-body").render())
+        assert "Project duration: 5.00h" in body
+        assert "Critical path: 11111111 -> 22222222" in body
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, CriticalPathScreen)
 
 
 def test_project_overview_groups_current_view_deterministically() -> None:
