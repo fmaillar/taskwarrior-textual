@@ -179,6 +179,30 @@ def test_working_calendar_zero_duration_keeps_valid_instant_and_normalizes_inval
     )
 
 
+def test_working_calendar_counts_working_hours_between_instants() -> None:
+    calendar = WorkingCalendar(PlanningSettings(timezone="UTC"))
+
+    assert calendar.working_hours_between(
+        datetime(2026, 9, 23, 10, 0, tzinfo=UTC),
+        datetime(2026, 9, 23, 15, 0, tzinfo=UTC),
+    ) == 4.0
+    assert calendar.working_hours_between(
+        datetime(2026, 9, 25, 16, 0, tzinfo=UTC),
+        datetime(2026, 9, 28, 10, 0, tzinfo=UTC),
+    ) == 3.0
+
+
+def test_working_calendar_working_hours_between_clamps_empty_or_reversed_interval() -> None:
+    calendar = WorkingCalendar(PlanningSettings(timezone="UTC"))
+    instant = datetime(2026, 9, 23, 10, 0, tzinfo=UTC)
+
+    assert calendar.working_hours_between(instant, instant) == 0.0
+    assert calendar.working_hours_between(
+        datetime(2026, 9, 23, 11, 0, tzinfo=UTC),
+        instant,
+    ) == 0.0
+
+
 def test_working_calendar_rejects_negative_work_duration() -> None:
     calendar = WorkingCalendar(PlanningSettings(timezone="UTC"))
 
