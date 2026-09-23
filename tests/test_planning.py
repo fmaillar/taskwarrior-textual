@@ -443,6 +443,48 @@ def test_build_absolute_schedule_uses_timewarrior_remaining_work() -> None:
     assert schedule.finishes[task.uuid] == datetime(2026, 9, 23, 14, 30, tzinfo=UTC)
 
 
+def test_build_absolute_schedule_accepts_explicit_origin_without_existing_anchor() -> None:
+    task = Task(
+        uuid="90909090-1111-2222-3333-444444444444",
+        description="Unscheduled",
+        status="pending",
+        estimate_hours=2.0,
+    )
+    origin = datetime(2026, 9, 23, 12, 30, tzinfo=UTC)
+
+    schedule = build_absolute_schedule(
+        build_planning_graph([task]),
+        PlanningSettings(timezone="UTC"),
+        now=origin,
+        origin=origin,
+    )
+
+    assert schedule is not None
+    assert schedule.origin == datetime(2026, 9, 23, 13, 0, tzinfo=UTC)
+    assert schedule.starts[task.uuid] == datetime(2026, 9, 23, 13, 0, tzinfo=UTC)
+    assert schedule.finishes[task.uuid] == datetime(2026, 9, 23, 15, 0, tzinfo=UTC)
+
+
+def test_build_absolute_schedule_explicit_origin_does_not_override_later_constraint() -> None:
+    task = Task(
+        uuid="91919191-1111-2222-3333-444444444444",
+        description="Constrained",
+        status="pending",
+        scheduled="20260924T090000Z",
+        estimate_hours=1.0,
+    )
+
+    schedule = build_absolute_schedule(
+        build_planning_graph([task]),
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+        origin=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+    )
+
+    assert schedule is not None
+    assert schedule.starts[task.uuid] == datetime(2026, 9, 24, 9, 0, tzinfo=UTC)
+
+
 def test_build_absolute_schedule_active_task_anchors_at_now_and_uses_remaining_work() -> None:
     active = Task(
         uuid="abababab-1111-2222-3333-444444444444",
