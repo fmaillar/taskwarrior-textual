@@ -114,13 +114,10 @@ class WorkingCalendar:
         if self.settings.timezone != "local":
             return ZoneInfo(self.settings.timezone)
 
-        try:
-            zoneinfo_root = Path("/usr/share/zoneinfo").resolve()
-            localtime = Path("/etc/localtime").resolve()
-            key = str(localtime.relative_to(zoneinfo_root))
-            return ZoneInfo(key)
-        except (OSError, ValueError, ZoneInfoNotFoundError):
-            return datetime.now().astimezone().tzinfo or UTC
+        zoneinfo_root = Path("/usr/share/zoneinfo").resolve()
+        localtime = Path("/etc/localtime").resolve()
+        key = str(localtime.relative_to(zoneinfo_root))
+        return ZoneInfo(key)
 
     def _localize(self, value: date, clock: time) -> datetime:
         zone = self._timezone()
@@ -142,7 +139,7 @@ class WorkingCalendar:
             raise ValueError(f"DST-nonexistent local time: {naive.isoformat()}")
         if first_valid and second_valid and first.utcoffset() != second.utcoffset():
             raise ValueError(f"DST-ambiguous local time: {naive.isoformat()}")
-        return first if first_valid else second
+        return first
 
     def _local_date(self, value: datetime) -> date:
         return value.astimezone(self._timezone()).date()
