@@ -10,7 +10,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
 
 from .models import Task
-from .planning import build_planning_graph
+from .planning import build_planning_graph, build_relative_schedule
 from .taskwarrior import TaskwarriorClient, TaskwarriorError
 
 
@@ -800,38 +800,16 @@ class TaskwarriorApp(App[None]):
             return "Critical path unavailable: dependency cycle detected."
         by_uuid = graph.by_uuid
         dependencies = graph.dependencies
-        successors = graph.successors
         unresolved = graph.unresolved
         order = list(graph.order)
 
-        earliest_start: dict[str, float] = {}
-        earliest_finish: dict[str, float] = {}
-        for uuid in order:
-            start = max(
-                (earliest_finish[dependency] for dependency in dependencies[uuid]),
-                default=0.0,
-            )
-            earliest_start[uuid] = start
-            earliest_finish[uuid] = start + by_uuid[uuid].estimate_hours
-
-        project_duration = max(earliest_finish.values(), default=0.0)
-        latest_start: dict[str, float] = {}
-        latest_finish: dict[str, float] = {}
-        for uuid in reversed(order):
-            if successors[uuid]:
-                finish = min(latest_start[successor] for successor in successors[uuid])
-            else:
-                finish = project_duration
-            latest_finish[uuid] = finish
-            latest_start[uuid] = finish - by_uuid[uuid].estimate_hours
-
-        slack = {
-            uuid: latest_start[uuid] - earliest_start[uuid]
-            for uuid in order
-        }
-        critical = {
-            uuid for uuid in order if abs(slack[uuid]) < 1e-9
-        }
+        schedule = build_relative_schedule(graph)
+        assert schedule is not None
+        earliest_start = schedule.earliest_start
+        earliest_finish = schedule.earliest_finish
+        project_duration = schedule.duration
+        slack = schedule.slack
+        critical = schedule.critical
 
         terminal = min(
             (
@@ -906,30 +884,12 @@ class TaskwarriorApp(App[None]):
         unresolved = graph.unresolved
         order = list(graph.order)
 
-        earliest_start: dict[str, float] = {}
-        earliest_finish: dict[str, float] = {}
-        for uuid in order:
-            start = max(
-                (earliest_finish[dependency] for dependency in dependencies[uuid]),
-                default=0.0,
-            )
-            earliest_start[uuid] = start
-            earliest_finish[uuid] = start + by_uuid[uuid].estimate_hours
-
-        project_duration = max(earliest_finish.values(), default=0.0)
-        latest_start: dict[str, float] = {}
-        for uuid in reversed(order):
-            if successors[uuid]:
-                finish = min(latest_start[successor] for successor in successors[uuid])
-            else:
-                finish = project_duration
-            latest_start[uuid] = finish - by_uuid[uuid].estimate_hours
-
-        critical = {
-            uuid
-            for uuid in order
-            if abs(latest_start[uuid] - earliest_start[uuid]) < 1e-9
-        }
+        schedule = build_relative_schedule(graph)
+        assert schedule is not None
+        earliest_start = schedule.earliest_start
+        earliest_finish = schedule.earliest_finish
+        project_duration = schedule.duration
+        critical = schedule.critical
         lines = [
             f"Scale: 1 char = 1h | Project duration: {project_duration:.2f}h",
             "Critical marker: *",
