@@ -11,6 +11,7 @@ from taskwarrior_textual.app import (
     DependencyOverviewScreen,
     DependencyScreen,
     GanttScreen,
+    MilestonesScreen,
     ProjectFilterForm,
     ProjectOverviewScreen,
     SearchForm,
@@ -138,6 +139,28 @@ class FakeUiClient:
 def test_task_form_can_hold_an_existing_task() -> None:
     form = TaskForm(TASK)
     assert form.initial_task is TASK
+
+
+def test_task_form_preserves_explicit_zero_estimate() -> None:
+    task = Task(
+        uuid="99999999-1111-2222-3333-444444444444",
+        description="Milestone",
+        status="pending",
+        estimate_hours=0.0,
+        estimate_defined=True,
+    )
+    form = TaskForm(task)
+
+    async def check() -> None:
+        app = TaskwarriorApp(client=FakeUiClient(tasks=[]))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.push_screen(form)
+            await pilot.pause()
+            assert form.query_one("#estimate", Input).value == "0.0"
+
+    import asyncio
+    asyncio.run(check())
 
 
 def test_delete_confirmation_can_hold_a_task() -> None:
@@ -925,6 +948,121 @@ async def test_constraints_key_opens_local_screen_without_refetch() -> None:
         await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(app.screen, ConstraintsScreen)
+
+
+def test_milestones_summary_lists_only_explicit_zero_estimates() -> None:
+    milestone = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Release gate",
+        status="pending",
+        due="20260925T000000Z",
+        estimate_hours=0.0,
+        estimate_defined=True,
+    )
+    missing = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="Unknown duration",
+        status="pending",
+    )
+    work = Task(
+        uuid="33333333-3333-3333-3333-333333333333",
+        description="Implementation",
+        status="pending",
+        estimate_hours=2.0,
+    )
+
+    summary = TaskwarriorApp._milestones_summary([work, missing, milestone])
+
+    assert "Milestones: 1" in summary
+    assert "11111111 | 2026-09-25 | Release gate" in summary
+    assert "22222222" not in summary
+    assert "33333333" not in summary
+
+
+def test_milestones_summary_handles_empty_cases() -> None:
+    assert TaskwarriorApp._milestones_summary([]) == "No tasks in current view."
+    task = Task(
+        uuid="aaaaaaaa-1111-2222-3333-444444444444",
+        description="Regular",
+        status="pending",
+        estimate_hours=1.0,
+    )
+    assert (
+        TaskwarriorApp._milestones_summary([task])
+        == "No explicit zero-duration milestones in current view."
+    )
+
+
+async def test_milestones_key_opens_local_screen_without_refetch() -> None:
+    milestone = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Release gate",
+        status="pending",
+        scheduled="20260924T090000Z",
+        estimate_hours=0.0,
+        estimate_defined=True,
+    )
+    client = FakeUiClient(tasks=[milestone])
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial_view_calls = client.calls.count(("view", "pending"))
+
+        await pilot.press("shift+m")
+        await pilot.pause()
+
+        assert isinstance(app.screen, MilestonesScreen)
+        body = str(app.screen.query_one("#milestones-body").render())
+        assert "Milestones: 1" in body
+        assert "Release gate" in body
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, MilestonesScreen)
+
+
+def test_gantt_distinguishes_milestone_from_missing_estimate() -> None:
+    milestone = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Gate",
+        status="pending",
+        estimate_hours=0.0,
+        estimate_defined=True,
+    )
+    missing = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="Unknown",
+        status="pending",
+    )
+
+    summary = TaskwarriorApp._gantt_summary([missing, milestone])
+
+    assert "11111111 | * | 0.00-0.00h | ◆ | Gate" in summary
+    assert "22222222 | * | 0.00-0.00h | · | Unknown" in summary
+    assert "Unestimated tasks shown as ·: 22222222" in summary
+
+
+def test_project_overview_does_not_count_milestones_as_unestimated() -> None:
+    milestone = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Gate",
+        status="pending",
+        project="Release",
+        estimate_hours=0.0,
+        estimate_defined=True,
+    )
+    missing = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="Unknown",
+        status="pending",
+        project="Release",
+    )
+
+    summary = TaskwarriorApp._project_overview([milestone, missing])
+
+    assert "Release | 2 | 0 | 0 | 0.00h | 1 | 0.00" in summary
 
 
 def test_project_overview_groups_current_view_deterministically() -> None:
