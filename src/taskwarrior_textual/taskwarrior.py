@@ -357,6 +357,38 @@ class TaskwarriorClient:
             ]
         )
 
+    def modify_planning(
+        self,
+        uuid_prefix: str,
+        *,
+        due: str = "",
+        wait: str = "",
+        scheduled: str = "",
+        depends: str = "",
+        estimate: str = "",
+    ) -> str:
+        """Replace only scheduling/dependency/estimate fields of a task."""
+        include_estimate = self.has_uda("estimate")
+        if estimate and not include_estimate:
+            self._require_estimate_uda()
+        if estimate:
+            self._validate_estimate(estimate)
+        return self._run(
+            [
+                uuid_prefix,
+                "modify",
+                *self._attributes(
+                    due=due,
+                    wait=wait,
+                    scheduled=scheduled,
+                    depends=depends,
+                    estimate=estimate,
+                    include_empty=True,
+                    include_estimate=include_estimate,
+                ),
+            ]
+        )
+
     def modify(
         self,
         uuid_prefix: str,
