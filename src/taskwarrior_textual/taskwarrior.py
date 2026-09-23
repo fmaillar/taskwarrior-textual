@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import shlex
 import shutil
@@ -148,6 +149,20 @@ class TaskwarriorClient:
                 "Define uda.estimate before editing estimates."
             )
 
+    @staticmethod
+    def _validate_estimate(estimate: str) -> None:
+        """Reject invalid, non-finite, or negative planning estimates."""
+        try:
+            value = float(estimate)
+        except ValueError as exc:
+            raise TaskwarriorError(
+                "estimate must be a finite non-negative number of hours."
+            ) from exc
+        if not math.isfinite(value) or value < 0:
+            raise TaskwarriorError(
+                "estimate must be a finite non-negative number of hours."
+            )
+
     def add(
         self,
         description: str,
@@ -165,6 +180,7 @@ class TaskwarriorClient:
         include_estimate = bool(estimate)
         if include_estimate:
             self._require_estimate_uda()
+            self._validate_estimate(estimate)
         return self._run(
             [
                 "add",
@@ -202,6 +218,8 @@ class TaskwarriorClient:
         include_estimate = self.has_uda("estimate")
         if estimate and not include_estimate:
             self._require_estimate_uda()
+        if estimate:
+            self._validate_estimate(estimate)
         return self._run(
             [
                 uuid_prefix,
