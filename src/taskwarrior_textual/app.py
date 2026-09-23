@@ -1376,7 +1376,7 @@ class TaskwarriorApp(App[None]):
         period: str = "7d",
         days: int | None = None,
     ) -> str:
-        """Summarize matched Timewarrior effort by local day and project."""
+        """Summarize matched Timewarrior effort and compare the prior period."""
         resolved_settings = settings or PlanningSettings()
         resolved_now = now or datetime.now(UTC)
         zone = WorkingCalendar(resolved_settings).timezone
@@ -1387,6 +1387,8 @@ class TaskwarriorApp(App[None]):
                 raise ValueError("days must be a positive integer")
             first_day = local_today - timedelta(days=days - 1)
             last_day = local_today
+            previous_first = first_day - timedelta(days=days)
+            previous_last = first_day - timedelta(days=1)
             label = (
                 f"Last {days} local days through {local_today.isoformat()} "
                 f"({resolved_settings.timezone})"
@@ -1394,6 +1396,8 @@ class TaskwarriorApp(App[None]):
         elif period == "7d":
             first_day = local_today - timedelta(days=6)
             last_day = local_today
+            previous_first = first_day - timedelta(days=7)
+            previous_last = first_day - timedelta(days=1)
             label = (
                 f"Last 7 local days through {local_today.isoformat()} "
                 f"({resolved_settings.timezone})"
@@ -1401,6 +1405,8 @@ class TaskwarriorApp(App[None]):
         elif period == "30d":
             first_day = local_today - timedelta(days=29)
             last_day = local_today
+            previous_first = first_day - timedelta(days=30)
+            previous_last = first_day - timedelta(days=1)
             label = (
                 f"Last 30 local days through {local_today.isoformat()} "
                 f"({resolved_settings.timezone})"
@@ -1408,6 +1414,8 @@ class TaskwarriorApp(App[None]):
         elif period == "week":
             first_day = local_today - timedelta(days=local_today.weekday())
             last_day = first_day + timedelta(days=6)
+            previous_first = first_day - timedelta(days=7)
+            previous_last = previous_first + timedelta(days=local_today.weekday())
             label = (
                 f"Current week {first_day.isoformat()} through {last_day.isoformat()} "
                 f"({resolved_settings.timezone})"
@@ -1422,6 +1430,12 @@ class TaskwarriorApp(App[None]):
             else:
                 next_month = first_day.replace(month=first_day.month + 1)
             last_day = next_month - timedelta(days=1)
+
+            previous_month_last = first_day - timedelta(days=1)
+            previous_first = previous_month_last.replace(day=1)
+            previous_last = previous_first.replace(
+                day=min(local_today.day, previous_month_last.day)
+            )
             label = (
                 f"Current month {first_day.isoformat()} through {last_day.isoformat()} "
                 f"({resolved_settings.timezone})"
@@ -1429,50 +1443,88 @@ class TaskwarriorApp(App[None]):
         else:
             raise ValueError(f"unknown trend period: {period}")
 
-        window_start = datetime.combine(first_day, time.min, tzinfo=zone).astimezone(UTC)
-        window_end = datetime.combine(
-            last_day + timedelta(days=1),
-            time.min,
-            tzinfo=zone,
-        ).astimezone(UTC)
-        day_count = (last_day - first_day).days + 1
-
         by_uuid = {task.uuid: task for task in tasks}
-        daily = {
-            first_day + timedelta(days=offset): 0.0
-            for offset in range(day_count)
-        }
-        projects: dict[str, float] = {}
 
-        for interval in intervals:
-            task = by_uuid.get(interval.task_uuid)
-            if task is None:
-                continue
-            start = max(interval.start, window_start)
-            end = min(interval.end, window_end)
-            if end <= start:
-                continue
+        def aggregate(
+            range_first,
+            range_last,
+            *,
+            include_daily: bool,
+        ) -> tuple[float, dict[str, float], dict]:
+            window_start = datetime.combine(
+                range_first,
+                time.min,
+                tzinfo=zone,
+            ).astimezone(UTC)
+            window_end = datetime.combine(
+                range_last + timedelta(days=1),
+                time.min,
+                tzinfo=zone,
+            ).astimezone(UTC)
+            daily = (
+                {
+                    range_first + timedelta(days=offset): 0.0
+                    for offset in range((range_last - range_first).days + 1)
+                }
+                if include_daily
+                else {}
+            )
+            projects: dict[str, float] = {}
+            total = 0.0
 
-            tracked_hours = (end - start).total_seconds() / 3600
-            project = task.project or "(none)"
-            projects[project] = projects.get(project, 0.0) + tracked_hours
+            for interval in intervals:
+                task = by_uuid.get(interval.task_uuid)
+                if task is None:
+                    continue
+                clipped_start = max(interval.start, window_start)
+                clipped_end = min(interval.end, window_end)
+                if clipped_end <= clipped_start:
+                    continue
 
-            cursor = start
-            while cursor < end:
-                local_day = cursor.astimezone(zone).date()
-                next_midnight = datetime.combine(
-                    local_day + timedelta(days=1),
-                    time.min,
-                    tzinfo=zone,
-                ).astimezone(UTC)
-                segment_end = min(end, next_midnight)
-                daily[local_day] += (segment_end - cursor).total_seconds() / 3600
-                cursor = segment_end
+                hours = (clipped_end - clipped_start).total_seconds() / 3600
+                total += hours
+                project = task.project or "(none)"
+                projects[project] = projects.get(project, 0.0) + hours
 
-        total = sum(daily.values())
+                if not include_daily:
+                    continue
+                cursor = clipped_start
+                while cursor < clipped_end:
+                    local_day = cursor.astimezone(zone).date()
+                    next_midnight = datetime.combine(
+                        local_day + timedelta(days=1),
+                        time.min,
+                        tzinfo=zone,
+                    ).astimezone(UTC)
+                    segment_end = min(clipped_end, next_midnight)
+                    daily[local_day] += (
+                        segment_end - cursor
+                    ).total_seconds() / 3600
+                    cursor = segment_end
+
+            return total, projects, daily
+
+        total, projects, daily = aggregate(
+            first_day,
+            last_day,
+            include_daily=True,
+        )
+        previous_total, previous_projects, _ = aggregate(
+            previous_first,
+            previous_last,
+            include_daily=False,
+        )
+        delta = total - previous_total
+        if previous_total == 0:
+            relative_change = "new" if total > 0 else "+0.0%"
+        else:
+            relative_change = f"{delta / previous_total * 100:+.1f}%"
+
         lines = [
             label,
             f"Tracked in window: {total:.2f}h",
+            f"Previous comparable: {previous_total:.2f}h",
+            f"Change: {delta:+.2f}h ({relative_change})",
             "",
             "Daily",
             "Date | Tracked",
@@ -1481,12 +1533,27 @@ class TaskwarriorApp(App[None]):
             f"{day.isoformat()} | {daily[day]:.2f}h"
             for day in sorted(daily)
         )
-        lines.extend(["", "Projects", "Project | Tracked"])
         lines.extend(
-            f"{project} | {hours:.2f}h"
-            for project, hours in sorted(
-                projects.items(),
-                key=lambda item: (-item[1], item[0].casefold()),
+            [
+                "",
+                "Projects",
+                "Project | Tracked | Previous | Change",
+            ]
+        )
+        all_projects = set(projects) | set(previous_projects)
+        lines.extend(
+            (
+                f"{project} | {projects.get(project, 0.0):.2f}h | "
+                f"{previous_projects.get(project, 0.0):.2f}h | "
+                f"{projects.get(project, 0.0) - previous_projects.get(project, 0.0):+.2f}h"
+            )
+            for project in sorted(
+                all_projects,
+                key=lambda item: (
+                    -projects.get(item, 0.0),
+                    -previous_projects.get(item, 0.0),
+                    item.casefold(),
+                ),
             )
         )
         return "\n".join(lines)
