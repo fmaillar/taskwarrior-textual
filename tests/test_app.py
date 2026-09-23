@@ -18,6 +18,7 @@ from taskwarrior_textual.app import (
     ProjectFilterForm,
     ProjectOverviewScreen,
     SearchForm,
+    TimewarriorReportScreen,
     TagFilterForm,
     TaskForm,
     TaskwarriorApp,
@@ -1421,6 +1422,119 @@ def test_gantt_distinguishes_milestone_from_missing_estimate() -> None:
     assert "11111111 | * | 0.00-0.00h | ◆ | Gate" in summary
     assert "22222222 | * | 0.00-0.00h | · | Unknown" in summary
     assert "Unestimated tasks shown as ·: 22222222" in summary
+
+
+def test_timewarrior_report_summarizes_tracked_remaining_and_progress() -> None:
+    active = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Active work",
+        status="pending",
+        project="Infra",
+        estimate_hours=4.0,
+    )
+    overrun = Task(
+        uuid="22222222-1111-1111-1111-111111111111",
+        description="Overrun",
+        status="pending",
+        project="Docs",
+        estimate_hours=1.0,
+    )
+    missing = Task(
+        uuid="33333333-1111-1111-1111-111111111111",
+        description="Unestimated",
+        status="pending",
+        project="Docs",
+    )
+    milestone = Task(
+        uuid="44444444-1111-1111-1111-111111111111",
+        description="Gate",
+        status="pending",
+        project="Infra",
+        estimate_hours=0.0,
+        estimate_defined=True,
+    )
+    tracked = {
+        active.uuid: 1.5,
+        overrun.uuid: 1.25,
+        missing.uuid: 0.5,
+    }
+
+    summary = TaskwarriorApp._timewarrior_report(
+        [missing, milestone, active, overrun],
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
+        tracked_hours=tracked,
+    )
+
+    assert summary.splitlines()[0] == (
+        "Tracked total: 3.25h | Estimated total: 5.00h | Remaining total: 2.50h"
+    )
+    assert (
+        "11111111 | Infra | 4.00h | 1.50h | 2.50h | 37.5% | Active work"
+        in summary
+    )
+    assert (
+        "22222222 | Docs | 1.00h | 1.25h | 0.00h | 125.0% | Overrun"
+        in summary
+    )
+    assert "33333333 | Docs | — | 0.50h | — | — | Unestimated" in summary
+    assert "44444444 | Infra | 0.00h | 0.00h | 0.00h | milestone | Gate" in summary
+
+    rows = summary.splitlines()[3:]
+    assert rows[0].startswith("11111111 |")
+    assert rows[1].startswith("22222222 |")
+
+
+def test_timewarrior_report_handles_empty_view() -> None:
+    assert (
+        TaskwarriorApp._timewarrior_report(
+            [],
+            PlanningSettings(timezone="UTC"),
+            now=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
+            tracked_hours={},
+        )
+        == "No tasks in current view."
+    )
+
+
+async def test_timewarrior_report_key_opens_report_without_refetch() -> None:
+    client = FakeUiClient(tasks=[TASK])
+    client.tracked_hours = {TASK.uuid: 1.0}
+    app = TaskwarriorApp(
+        client=client,
+        planning_settings=PlanningSettings(timezone="UTC"),
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial_view_calls = client.calls.count(("view", "pending"))
+
+        await pilot.press("shift+t")
+        await pilot.pause()
+
+        assert isinstance(app.screen, TimewarriorReportScreen)
+        body = str(app.screen.query_one("#timewarrior-report-body").render())
+        assert "Tracked total: 1.00h" in body
+        assert "2.50h | 1.00h | 1.50h | 40.0%" in body
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, TimewarriorReportScreen)
+
+
+async def test_timewarrior_report_does_not_open_when_timewarrior_fails() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    client.fail = "timewarrior_hours"
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+t")
+        await pilot.pause()
+
+        assert not isinstance(app.screen, TimewarriorReportScreen)
+        assert "timewarrior_hours failed" in str(app.query_one("#details").render())
 
 
 def test_project_overview_does_not_count_milestones_as_unestimated() -> None:
