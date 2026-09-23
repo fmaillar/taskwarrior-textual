@@ -17,14 +17,12 @@ tests/test_taskwarrior.py .......................                        [100%]
 ================================ tests coverage ================================
 _______________ coverage: platform linux, python 3.13.5-final-0 ________________
 
-Name                             Stmts   Miss Branch BrPart  Cover   Missing
-----------------------------------------------------------------------------
-src/taskwarrior_textual/app.py     540      1    130      1    99%   806
-----------------------------------------------------------------------------
-TOTAL                              682      1    146      1    99%
+Name    Stmts   Miss Branch BrPart  Cover   Missing
+---------------------------------------------------
+TOTAL     680      0    144      0   100%
 
-4 files skipped due to complete coverage.
+5 files skipped due to complete coverage.
 Coverage HTML written to dir htmlcov
 Coverage XML written to file reports/coverage.xml
-Required test coverage of 95.0% reached. Total coverage: 99.76%
-============================= 98 passed in 40.70s ==============================
+Required test coverage of 95.0% reached. Total coverage: 100.00%
+============================= 98 passed in 40.28s ==============================
