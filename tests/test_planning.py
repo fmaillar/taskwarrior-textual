@@ -169,6 +169,91 @@ def test_build_planning_graph_handles_empty_input() -> None:
     assert graph.cyclic is False
 
 
+def test_remaining_estimate_uses_completed_zero_and_active_elapsed_work() -> None:
+    completed = Task(
+        uuid="aaaaaaaa-1111-2222-3333-444444444444",
+        description="Completed",
+        status="completed",
+        start="20260923T080000Z",
+        end="20260923T090000Z",
+        estimate_hours=5.0,
+    )
+    active = Task(
+        uuid="bbbbbbbb-1111-2222-3333-444444444444",
+        description="Active",
+        status="pending",
+        start="20260923T090000Z",
+        estimate_hours=5.0,
+    )
+    inactive = Task(
+        uuid="cccccccc-1111-2222-3333-444444444444",
+        description="Inactive",
+        status="pending",
+        estimate_hours=5.0,
+    )
+    settings = PlanningSettings(timezone="UTC")
+    now = datetime(2026, 9, 23, 11, 0, tzinfo=UTC)
+
+    schedule = build_relative_schedule(
+        build_planning_graph([completed, active, inactive]),
+        settings,
+        now=now,
+    )
+
+    assert schedule is not None
+    assert schedule.earliest_finish[completed.uuid] == 0.0
+    assert schedule.earliest_finish[active.uuid] == 3.0
+    assert schedule.earliest_finish[inactive.uuid] == 5.0
+
+
+def test_active_remaining_estimate_never_goes_negative() -> None:
+    active = Task(
+        uuid="dddddddd-1111-2222-3333-444444444444",
+        description="Overrun",
+        status="pending",
+        start="20260923T080000Z",
+        estimate_hours=1.0,
+    )
+
+    schedule = build_relative_schedule(
+        build_planning_graph([active]),
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 11, 0, tzinfo=UTC),
+    )
+
+    assert schedule is not None
+    assert schedule.duration == 0.0
+    assert schedule.earliest_finish[active.uuid] == 0.0
+
+
+def test_active_task_with_invalid_or_future_start_keeps_full_estimate() -> None:
+    invalid = Task(
+        uuid="eeeeeeee-1111-2222-3333-444444444444",
+        description="Invalid active",
+        status="pending",
+        start="tomorrow",
+        estimate_hours=2.0,
+    )
+    future = Task(
+        uuid="ffffffff-1111-2222-3333-444444444444",
+        description="Future active",
+        status="pending",
+        start="20260923T120000Z",
+        estimate_hours=2.0,
+    )
+    now = datetime(2026, 9, 23, 11, 0, tzinfo=UTC)
+
+    schedule = build_relative_schedule(
+        build_planning_graph([invalid, future]),
+        PlanningSettings(timezone="UTC"),
+        now=now,
+    )
+
+    assert schedule is not None
+    assert schedule.earliest_finish[invalid.uuid] == 2.0
+    assert schedule.earliest_finish[future.uuid] == 2.0
+
+
 def test_build_relative_schedule_computes_cpm_values() -> None:
     foundation = Task(
         uuid="11111111-1111-1111-1111-111111111111",
@@ -274,6 +359,54 @@ def test_parse_taskwarrior_datetime_accepts_utc_and_rejects_unknown() -> None:
     parsed = parse_taskwarrior_datetime("20260924T090000Z")
     assert parsed is not None
     assert parsed.strftime("%Y-%m-%d %H:%M") == "2026-09-24 09:00"
+
+
+def test_build_absolute_schedule_active_task_anchors_at_now_and_uses_remaining_work() -> None:
+    active = Task(
+        uuid="abababab-1111-2222-3333-444444444444",
+        description="Active",
+        status="pending",
+        start="20260923T090000Z",
+        estimate_hours=4.0,
+    )
+
+    schedule = build_absolute_schedule(
+        build_planning_graph([active]),
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 11, 0, tzinfo=UTC),
+    )
+
+    assert schedule is not None
+    assert schedule.origin == datetime(2026, 9, 23, 11, 0, tzinfo=UTC)
+    assert schedule.starts[active.uuid] == datetime(2026, 9, 23, 11, 0, tzinfo=UTC)
+    assert schedule.finishes[active.uuid] == datetime(2026, 9, 23, 14, 0, tzinfo=UTC)
+
+
+def test_build_absolute_schedule_completed_dependency_consumes_no_future_work() -> None:
+    completed = Task(
+        uuid="cdcdcdcd-1111-2222-3333-444444444444",
+        description="Completed dependency",
+        status="completed",
+        estimate_hours=8.0,
+    )
+    pending = Task(
+        uuid="efefefef-1111-2222-3333-444444444444",
+        description="Pending",
+        status="pending",
+        scheduled="20260923T080000Z",
+        depends=(completed.uuid,),
+        estimate_hours=2.0,
+    )
+
+    schedule = build_absolute_schedule(
+        build_planning_graph([pending, completed]),
+        PlanningSettings(timezone="UTC"),
+    )
+
+    assert schedule is not None
+    assert schedule.finishes[completed.uuid] == datetime(2026, 9, 23, 8, 0, tzinfo=UTC)
+    assert schedule.starts[pending.uuid] == datetime(2026, 9, 23, 8, 0, tzinfo=UTC)
+    assert schedule.finishes[pending.uuid] == datetime(2026, 9, 23, 10, 0, tzinfo=UTC)
 
 
 def test_build_absolute_schedule_applies_dependencies_scheduled_and_due() -> None:
