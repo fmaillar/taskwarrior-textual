@@ -93,6 +93,44 @@ def test_planning_settings_rejects_nonpositive_capacity(capacity: int) -> None:
         PlanningSettings(capacity=capacity)
 
 
+def test_working_calendar_interprets_periods_in_configured_timezone() -> None:
+    calendar = WorkingCalendar(PlanningSettings(timezone="Europe/Paris"))
+
+    assert calendar.is_working_time(datetime(2026, 9, 23, 6, 0, tzinfo=UTC)) is True
+    assert calendar.is_working_time(datetime(2026, 9, 23, 5, 59, tzinfo=UTC)) is False
+    assert calendar.next_working_time(
+        datetime(2026, 9, 23, 5, 30, tzinfo=UTC)
+    ) == datetime(2026, 9, 23, 6, 0, tzinfo=UTC)
+    assert calendar.deadline_for_date("2026-09-25") == datetime(
+        2026, 9, 25, 15, 0, tzinfo=UTC
+    )
+
+
+def test_working_calendar_adds_local_work_hours_and_returns_utc() -> None:
+    calendar = WorkingCalendar(PlanningSettings(timezone="Europe/Paris"))
+
+    assert calendar.add_working_hours(
+        datetime(2026, 9, 25, 13, 0, tzinfo=UTC),
+        8,
+    ) == datetime(2026, 9, 28, 13, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize("target", ["2026-03-29", "2026-10-25"])
+def test_working_calendar_rejects_dst_ambiguous_or_nonexistent_period_boundaries(
+    target: str,
+) -> None:
+    calendar = WorkingCalendar(
+        PlanningSettings(
+            timezone="Europe/Paris",
+            workdays=(6,),
+            work_periods=(("02:30", "04:00"),),
+        )
+    )
+
+    with pytest.raises(ValueError, match="DST"):
+        calendar.deadline_for_date(target)
+
+
 def test_working_calendar_recognizes_work_periods_and_holidays() -> None:
     calendar = WorkingCalendar(
         PlanningSettings(
