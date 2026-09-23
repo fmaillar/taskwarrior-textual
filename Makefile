@@ -114,11 +114,11 @@ verify-package: package
 check: report verify-package
 
 publish:
-	@test "$(git branch --show-current)" = "main" || { echo "publish requires main"; exit 1; }
-	@test -z "$(git status --porcelain)" || { echo "publish requires a clean working tree"; exit 1; }
+	@test "$$(git branch --show-current)" = "main" || { echo "publish requires main"; exit 1; }
+	@test -z "$$(git status --porcelain)" || { echo "publish requires a clean working tree"; exit 1; }
 	@git remote get-url "$(PUBLISH_REMOTE)" >/dev/null 2>&1 || { echo "missing remote: $(PUBLISH_REMOTE)"; exit 1; }
 	@git fetch origin main
-	@test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" || { echo "local main is not origin/main"; exit 1; }
+	@test "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main)" || { echo "local main is not origin/main"; exit 1; }
 	git push "$(PUBLISH_REMOTE)" main
 	git push "$(PUBLISH_REMOTE)" --tags
 push-reports: install
