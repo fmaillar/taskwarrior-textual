@@ -477,6 +477,49 @@ def test_critical_path_summary_treats_missing_estimates_as_zero() -> None:
     assert "Critical path: aaaaaaaa -> bbbbbbbb" in summary
 
 
+def test_critical_path_summary_marks_milestones_and_deadline_pressure() -> None:
+    start = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Start",
+        status="pending",
+        scheduled="20260924T090000Z",
+        estimate_hours=2.0,
+    )
+    milestone = Task(
+        uuid="22222222-2222-2222-2222-222222222222",
+        description="Gate",
+        status="pending",
+        depends=(start.uuid,),
+        due="20260924T100000Z",
+        estimate_hours=0.0,
+        estimate_defined=True,
+    )
+
+    summary = TaskwarriorApp._critical_path_summary([milestone, start])
+
+    assert "22222222 | 0.00h | 2.00 | 2.00 | 0.00 | yes | milestone" in summary
+    assert "Deadline pressure" in summary
+    assert (
+        "22222222 | 2026-09-24 10:00 | 2026-09-24 11:00 | "
+        "-1.00h | yes | milestone"
+    ) in summary
+
+
+def test_critical_path_summary_omits_deadline_pressure_without_calendar_anchor() -> None:
+    task = Task(
+        uuid="aaaaaaaa-1111-2222-3333-444444444444",
+        description="Deadline only",
+        status="pending",
+        due="20260925T120000Z",
+        estimate_hours=1.0,
+    )
+
+    summary = TaskwarriorApp._critical_path_summary([task])
+
+    assert "Deadline pressure" not in summary
+    assert "aaaaaaaa | 1.00h | 0.00 | 1.00 | 0.00 | yes | task" in summary
+
+
 def test_critical_path_summary_reports_unresolved_dependencies() -> None:
     task = Task(
         uuid="aaaaaaaa-1111-2222-3333-444444444444",
