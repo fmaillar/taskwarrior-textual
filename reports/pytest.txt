@@ -5,13 +5,13 @@ configfile: pyproject.toml
 testpaths: tests
 plugins: asyncio-1.4.0, cov-7.1.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collected 166 items
+collected 168 items
 
 tests/test_app.py ...................................................... [ 32%]
-....................................                                     [ 54%]
+.....................................                                    [ 54%]
 tests/test_main.py ..                                                    [ 55%]
 tests/test_models.py ..............                                      [ 63%]
-tests/test_planning.py ..............                                    [ 72%]
+tests/test_planning.py ...............                                   [ 72%]
 tests/test_taskwarrior.py .............................................. [100%]
 
 - generated xml file: /home/fgm/projets/taskwarrior-textual/reports/junit.xml --
@@ -26,4 +26,4 @@ TOTAL    1038      0    252      0   100%
 Coverage HTML written to dir htmlcov
 Coverage XML written to file reports/coverage.xml
 Required test coverage of 95.0% reached. Total coverage: 100.00%
-======================== 166 passed in 80.84s (0:01:20) ========================
+======================== 168 passed in 81.73s (0:01:21) ========================
