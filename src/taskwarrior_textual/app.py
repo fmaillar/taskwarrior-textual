@@ -1036,6 +1036,7 @@ class TaskwarriorApp(App[None]):
         finishes = schedule.finishes
         late_by = schedule.late_by
         invalid_due = schedule.invalid_due
+        invalid_scheduled = schedule.invalid_scheduled
         project_finish = max(finishes.values())
 
         lines = [
@@ -1082,6 +1083,11 @@ class TaskwarriorApp(App[None]):
 
         if invalid_due:
             lines.extend(["", "Invalid due dates ignored: " + ", ".join(invalid_due)])
+
+        if invalid_scheduled:
+            lines.extend(
+                ["", "Invalid scheduled dates ignored: " + ", ".join(invalid_scheduled)]
+            )
 
         return "\n".join(lines)
 
