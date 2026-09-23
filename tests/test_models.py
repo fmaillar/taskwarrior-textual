@@ -39,6 +39,8 @@ def test_task_from_export() -> None:
     assert task.display_entry == "2026-09-22 12:00"
     assert task.display_end == ""
     assert task.estimate_hours == 2.5
+    assert task.has_estimate is True
+    assert task.is_milestone is False
     assert task.display_estimate == "2.50h"
     assert task.active is True
 
@@ -60,6 +62,8 @@ def test_task_defaults_for_optional_metadata() -> None:
     assert task.end == ""
     assert task.entry == ""
     assert task.estimate_hours == 0.0
+    assert task.has_estimate is False
+    assert task.is_milestone is False
     assert task.display_estimate == ""
     assert task.active is False
     assert task.display_wait == ""
@@ -105,3 +109,32 @@ def test_estimate_is_coerced_from_export_string() -> None:
 
     assert task.estimate_hours == 1.25
     assert task.display_estimate == "1.25h"
+
+
+
+def test_explicit_zero_estimate_is_a_milestone() -> None:
+    task = Task.from_export(
+        {
+            "uuid": "99999999-1234-1234-1234-123456789abc",
+            "description": "Release gate",
+            "status": "pending",
+            "estimate": 0,
+        }
+    )
+
+    assert task.estimate_hours == 0.0
+    assert task.has_estimate is True
+    assert task.is_milestone is True
+    assert task.display_estimate == "0.00h"
+
+
+def test_positive_direct_estimate_counts_as_defined() -> None:
+    task = Task(
+        uuid="12121212-1234-1234-1234-123456789abc",
+        description="Estimated directly",
+        status="pending",
+        estimate_hours=2.0,
+    )
+
+    assert task.has_estimate is True
+    assert task.is_milestone is False
