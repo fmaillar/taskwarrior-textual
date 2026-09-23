@@ -5,11 +5,11 @@ configfile: pyproject.toml
 testpaths: tests
 plugins: asyncio-1.4.0, cov-7.1.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collected 132 items
+collected 134 items
 
 tests/test_app.py ...................................................... [ 40%]
-................................                                         [ 65%]
-tests/test_main.py ..                                                    [ 66%]
+..................................                                       [ 65%]
+tests/test_main.py ..                                                    [ 67%]
 tests/test_models.py .........                                           [ 73%]
 tests/test_planning.py ............                                      [ 82%]
 tests/test_taskwarrior.py .......................                        [100%]
@@ -18,12 +18,14 @@ tests/test_taskwarrior.py .......................                        [100%]
 ================================ tests coverage ================================
 _______________ coverage: platform linux, python 3.13.5-final-0 ________________
 
-Name    Stmts   Miss Branch BrPart  Cover   Missing
----------------------------------------------------
-TOTAL     956      0    218      0   100%
+Name                             Stmts   Miss Branch BrPart  Cover   Missing
+----------------------------------------------------------------------------
+src/taskwarrior_textual/app.py     704      0    172      1    99%   930->954
+----------------------------------------------------------------------------
+TOTAL                              968      0    224      1    99%
 
-6 files skipped due to complete coverage.
+5 files skipped due to complete coverage.
 Coverage HTML written to dir htmlcov
 Coverage XML written to file reports/coverage.xml
-Required test coverage of 95.0% reached. Total coverage: 100.00%
-======================== 132 passed in 82.50s (0:01:22) ========================
+Required test coverage of 95.0% reached. Total coverage: 99.92%
+======================== 134 passed in 80.51s (0:01:20) ========================
