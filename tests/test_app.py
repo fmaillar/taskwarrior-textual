@@ -514,6 +514,33 @@ async def test_dependency_expansion_error_is_rendered_without_opening_planning_s
         assert "expand_dependencies failed" in str(app.query_one("#details").render())
 
 
+@pytest.mark.parametrize(
+    ("key", "screen_type"),
+    [
+        ("g", DependencyScreen),
+        ("shift+c", CriticalPathScreen),
+        ("shift+h", GanttScreen),
+        ("shift+l", CalendarPlanScreen),
+        ("shift+k", ConstraintsScreen),
+    ],
+)
+async def test_planning_actions_stop_when_dependency_expansion_fails(
+    key: str,
+    screen_type: type,
+) -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    client.fail = "expand_dependencies"
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press(key)
+        await pilot.pause()
+
+        assert not isinstance(app.screen, screen_type)
+        assert "expand_dependencies failed" in str(app.query_one("#details").render())
+
+
 def test_critical_path_summary_computes_schedule_and_slack() -> None:
     foundation = Task(
         uuid="11111111-1111-1111-1111-111111111111",
