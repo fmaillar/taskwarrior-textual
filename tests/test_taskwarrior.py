@@ -372,6 +372,54 @@ def test_modify_can_clear_optional_fields() -> None:
     ]
 
 
+def test_modify_planning_replaces_only_planning_fields() -> None:
+    client = RecordingClient()
+    client.modify_planning(
+        "12345678",
+        due="2026-10-01",
+        wait="2026-09-25 08:00",
+        scheduled="2026-09-26 09:00",
+        depends="aaaaaaaa,bbbbbbbb",
+        estimate="5.5",
+    )
+    assert client.calls == [
+        ["_udas"],
+        [
+            "12345678",
+            "modify",
+            "due:2026-10-01",
+            "wait:2026-09-25 08:00",
+            "scheduled:2026-09-26 09:00",
+            "depends:aaaaaaaa,bbbbbbbb",
+            "estimate:5.5",
+        ],
+    ]
+
+
+def test_modify_planning_can_clear_all_fields() -> None:
+    client = RecordingClient()
+    client.modify_planning("12345678")
+    assert client.calls == [
+        ["_udas"],
+        [
+            "12345678",
+            "modify",
+            "due:",
+            "wait:",
+            "scheduled:",
+            "depends:",
+            "estimate:",
+        ],
+    ]
+
+
+def test_modify_planning_requires_estimate_uda_for_nonempty_estimate() -> None:
+    client = RecordingClient()
+    client._udas_cache = frozenset()
+    with pytest.raises(TaskwarriorError, match="estimate UDA"):
+        client.modify_planning("12345678", estimate="2")
+
+
 def test_client_uses_environment_override(monkeypatch) -> None:
     monkeypatch.setenv("TASKWARRIOR_COMMAND", "/custom/task")
     client = TaskwarriorClient()
