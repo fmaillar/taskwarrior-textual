@@ -4,7 +4,11 @@ from datetime import UTC, datetime
 import pytest
 
 from taskwarrior_textual.models import Task
-from taskwarrior_textual.taskwarrior import TaskwarriorClient, TaskwarriorError
+from taskwarrior_textual.taskwarrior import (
+    TaskwarriorClient,
+    TaskwarriorError,
+    TimewarriorInterval,
+)
 
 
 class FakeClient(TaskwarriorClient):
@@ -46,6 +50,54 @@ class TimewarriorRecordingClient(TaskwarriorClient):
     def _run_timewarrior(self, args):  # type: ignore[override]
         self.timewarrior_calls.append(list(args))
         return self.timewarrior_output
+
+
+def test_timewarrior_intervals_returns_matched_closed_and_open_intervals() -> None:
+    task = Task(
+        uuid="01010101-1111-1111-1111-111111111111",
+        description="Tracked",
+        status="pending",
+        project="Work",
+        tags=("python",),
+    )
+    client = TimewarriorRecordingClient()
+    client.timewarrior_output = json.dumps(
+        [
+            {
+                "start": "20260922T080000Z",
+                "end": "20260922T093000Z",
+                "tags": ["Tracked", "Work", "python"],
+            },
+            {
+                "start": "20260923T100000Z",
+                "tags": ["python", "Tracked", "Work"],
+            },
+        ]
+    )
+    now = datetime(2026, 9, 23, 11, 0, tzinfo=UTC)
+
+    intervals = client.timewarrior_intervals([task], now=now)
+
+    assert intervals == (
+        TimewarriorInterval(
+            task_uuid=task.uuid,
+            start=datetime(2026, 9, 22, 8, 0, tzinfo=UTC),
+            end=datetime(2026, 9, 22, 9, 30, tzinfo=UTC),
+        ),
+        TimewarriorInterval(
+            task_uuid=task.uuid,
+            start=datetime(2026, 9, 23, 10, 0, tzinfo=UTC),
+            end=now,
+        ),
+    )
+    assert client.timewarrior_calls == [["export"]]
+
+
+def test_timewarrior_intervals_returns_empty_when_timewarrior_is_unavailable() -> None:
+    client = RecordingClient()
+    client.timewarrior_command = None
+
+    assert client.timewarrior_intervals([]) == ()
 
 
 def test_timewarrior_hours_sums_closed_and_open_intervals_for_unique_task_signature() -> None:
