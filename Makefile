@@ -22,9 +22,9 @@ help:
 	  'make test          Run pytest in parallel with the configured coverage gate' \
 	  'make test-serial   Run pytest sequentially for debugging' \
 	  'make coverage      Run parallel tests and generate coverage reports' \
-	  'make report        Generate compact reports and keep pytest exit status' \
+	  'make report        Generate Ruff + pytest/coverage reports and statuses' \
 	  'make lint          Run Ruff' \
-	  'make check         Run strict lint + tests/coverage checks' \
+	  'make check         Run the full reported quality gate' \
 	  'make push-reports  Always commit/push reports, even when tests fail' \
 	  'make clean         Remove generated local artifacts'
 
@@ -59,21 +59,26 @@ coverage: install
 report: install
 	mkdir -p "$(REPORT_DIR)"
 	@set +e; \
+	$(RUFF) check src tests 2>&1 | tee "$(REPORT_DIR)/ruff.txt"; \
+	lint_status=$${PIPESTATUS[0]}; \
+	printf '%s\n' "$$lint_status" > "$(REPORT_DIR)/ruff-exit-status.txt"; \
 	$(PYTEST) -n "$(PYTEST_JOBS)" \
 	  --junitxml="$(REPORT_DIR)/junit.xml" \
 	  --cov-report=term-missing \
 	  --cov-report=xml:"$(REPORT_DIR)/coverage.xml" \
 	  2>&1 | tee "$(REPORT_DIR)/pytest.txt"; \
-	status=$${PIPESTATUS[0]}; \
+	test_status=$${PIPESTATUS[0]}; \
 	$(COVERAGE) json -o "$(REPORT_DIR)/coverage.json"; \
-	printf '%s\n' "$$status" > "$(REPORT_DIR)/pytest-exit-status.txt"; \
-	exit $$status
+	printf '%s\n' "$$test_status" > "$(REPORT_DIR)/pytest-exit-status.txt"; \
+	if [ $$lint_status -ne 0 ]; then \
+		exit $$lint_status; \
+	fi; \
+	exit $$test_status
 
 lint: install
 	$(RUFF) check src tests
 
-check: lint report
-
+check: report
 push-reports: install
 	@set +e; \
 	$(MAKE) --no-print-directory report; \
