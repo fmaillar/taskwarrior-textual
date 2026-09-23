@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, time, timedelta
-
 from typing import ClassVar
 
 from textual.app import App, ComposeResult

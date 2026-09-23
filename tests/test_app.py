@@ -18,11 +18,11 @@ from taskwarrior_textual.app import (
     ProjectFilterForm,
     ProjectOverviewScreen,
     SearchForm,
-    TimewarriorReportScreen,
-    TimewarriorTrendScreen,
     TagFilterForm,
     TaskForm,
     TaskwarriorApp,
+    TimewarriorReportScreen,
+    TimewarriorTrendScreen,
 )
 from taskwarrior_textual.config import PlanningSettings
 from taskwarrior_textual.models import Task
