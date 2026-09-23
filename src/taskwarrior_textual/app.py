@@ -8,7 +8,7 @@ from typing import ClassVar, cast
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import DataTable, Footer, Header, Static
 
 from .config import PlanningSettings, WorkingCalendar, load_planning_settings
@@ -40,6 +40,30 @@ from .ui import (
 )
 
 
+class DetailsPane(VerticalScroll):
+    """Focusable, vertically scrollable task-detail pane."""
+
+    can_focus = True
+
+    BINDINGS = [
+        Binding("tab", "focus_tasks", "Tasks"),
+    ]
+
+    def action_focus_tasks(self) -> None:
+        self.app.query_one("#tasks", DataTable).focus()
+
+
+class TaskTable(DataTable):
+    """Task table with an explicit focus handoff to the detail pane."""
+
+    BINDINGS = [
+        Binding("tab", "focus_details", "Details"),
+    ]
+
+    def action_focus_details(self) -> None:
+        self.app.query_one("#details-pane", DetailsPane).focus()
+
+
 class TaskwarriorApp(PlanningReportsMixin, App[None]):
     """Interactive Taskwarrior browser and editor."""
 
@@ -47,7 +71,7 @@ class TaskwarriorApp(PlanningReportsMixin, App[None]):
     SUB_TITLE = "Taskwarrior 3 frontend"
 
     BINDINGS: ClassVar[list[Binding | tuple[str, str] | tuple[str, str, str]]] = [
-        Binding("question_mark", "show_help", "Help", key_display="?"),
+        Binding("question_mark", "show_help", "Help", key_display="?", priority=True),
         ("q", "quit", "Quit"),
         ("r", "refresh_tasks", "Refresh"),
         ("enter", "inspect_task", "Inspect"),
@@ -90,7 +114,8 @@ class TaskwarriorApp(PlanningReportsMixin, App[None]):
 
     CSS = """
     #tasks { width: 2fr; }
-    #details { width: 1fr; padding: 1 2; border-left: solid $primary; }
+    #details-pane { width: 1fr; border-left: solid $primary; }
+    #details { width: 1fr; padding: 1 2; }
     """
 
     def __init__(
@@ -116,8 +141,9 @@ class TaskwarriorApp(PlanningReportsMixin, App[None]):
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal():
-            yield DataTable(id="tasks", cursor_type="row", zebra_stripes=True)
-            yield Static("Select a task and press Enter.", id="details")
+            yield TaskTable(id="tasks", cursor_type="row", zebra_stripes=True)
+            with DetailsPane(id="details-pane"):
+                yield Static("Select a task and press Enter.", id="details")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -457,7 +483,10 @@ class TaskwarriorApp(PlanningReportsMixin, App[None]):
         self.action_refresh_tasks()
 
     def action_show_help(self) -> None:
-        """Open the in-application key and feature reference."""
+        """Toggle the in-application key and feature reference globally."""
+        if isinstance(self.screen, HelpScreen):
+            self.screen.dismiss(None)
+            return
         self.push_screen(HelpScreen())
 
     def action_view_pending(self) -> None:

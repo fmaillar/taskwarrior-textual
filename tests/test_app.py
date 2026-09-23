@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from textual.widgets import Button, Input
+from textual.widgets import Button, DataTable, Input
 
 from taskwarrior_textual import app as app_module
 from taskwarrior_textual.app import (
@@ -13,6 +13,7 @@ from taskwarrior_textual.app import (
     CriticalPathScreen,
     DependencyOverviewScreen,
     DependencyScreen,
+    DetailsPane,
     GanttScreen,
     HelpScreen,
     MilestonesScreen,
@@ -3877,6 +3878,44 @@ async def test_help_closes_with_question_mark_and_escape() -> None:
         await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(app.screen, HelpScreen)
+
+
+async def test_question_mark_opens_help_from_another_view() -> None:
+    app = TaskwarriorApp(client=FakeUiClient(tasks=SEARCH_TASKS))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(TimewarriorReportScreen("tracked effort"))
+        await pilot.pause()
+        assert isinstance(app.screen, TimewarriorReportScreen)
+
+        await pilot.press("question_mark")
+        await pilot.pause()
+        assert isinstance(app.screen, HelpScreen)
+
+        await pilot.press("question_mark")
+        await pilot.pause()
+        assert isinstance(app.screen, TimewarriorReportScreen)
+
+
+async def test_tab_toggles_focus_between_task_list_and_details() -> None:
+    app = TaskwarriorApp(client=FakeUiClient(tasks=SEARCH_TASKS))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        tasks = app.query_one("#tasks", DataTable)
+        details = app.query_one("#details-pane", DetailsPane)
+
+        tasks.focus()
+        assert app.focused is tasks
+
+        await pilot.press("tab")
+        await pilot.pause()
+        assert app.focused is details
+
+        await pilot.press("tab")
+        await pilot.pause()
+        assert app.focused is tasks
 
 
 async def test_search_key_opens_search_form_and_enter_filters_locally() -> None:

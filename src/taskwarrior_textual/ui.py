@@ -32,6 +32,7 @@ Views, search and filters
   t       Cycle local sort
   c       Clear local filters and sort
   r       Refresh current Taskwarrior view
+  Tab     Switch between task list and details
 
 Planning
   g       Selected-task dependencies
