@@ -17,6 +17,8 @@ class PlanningGraph:
     successors: dict[str, frozenset[str]]
     order: tuple[str, ...]
     remaining: tuple[str, ...]
+    cycle_nodes: frozenset[str]
+    blocked_by_cycle: frozenset[str]
     unresolved: tuple[tuple[str, str], ...]
 
     @property
@@ -66,6 +68,48 @@ def build_planning_graph(tasks: list[Task]) -> PlanningGraph:
             else:
                 unresolved.append((task.short_uuid, dependency[:8]))
 
+    index = 0
+    indices: dict[str, int] = {}
+    lowlink: dict[str, int] = {}
+    stack: list[str] = []
+    on_stack: set[str] = set()
+    cycle_nodes: set[str] = set()
+
+    def visit(uuid: str) -> None:
+        nonlocal index
+        indices[uuid] = index
+        lowlink[uuid] = index
+        index += 1
+        stack.append(uuid)
+        on_stack.add(uuid)
+
+        for successor in successor_sets[uuid]:
+            if successor not in indices:
+                visit(successor)
+                lowlink[uuid] = min(lowlink[uuid], lowlink[successor])
+            elif successor in on_stack:
+                lowlink[uuid] = min(lowlink[uuid], indices[successor])
+
+        if lowlink[uuid] != indices[uuid]:
+            return
+
+        component: list[str] = []
+        while True:
+            member = stack.pop()
+            on_stack.remove(member)
+            component.append(member)
+            if member == uuid:
+                break
+
+        if len(component) > 1:
+            cycle_nodes.update(component)
+        elif component[0] in dependency_sets[component[0]]:
+            cycle_nodes.add(component[0])
+
+    for uuid in sorted(by_uuid):
+        if uuid not in indices:
+            visit(uuid)
+
     remaining = set(by_uuid)
     order: list[str] = []
     while remaining:
@@ -96,6 +140,8 @@ def build_planning_graph(tasks: list[Task]) -> PlanningGraph:
         remaining=tuple(
             sorted(remaining, key=lambda uuid: by_uuid[uuid].short_uuid)
         ),
+        cycle_nodes=frozenset(cycle_nodes),
+        blocked_by_cycle=frozenset(remaining - cycle_nodes),
         unresolved=tuple(sorted(unresolved)),
     )
 
