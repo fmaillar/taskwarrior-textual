@@ -214,9 +214,6 @@ def _capacity_allows(
     capacity: int,
 ) -> bool:
     """Return whether one more task fits without exceeding capacity."""
-    if finish <= start:
-        return True
-
     points = {start}
     for reserved_start, reserved_finish in reservations:
         if reserved_start < finish and reserved_finish > start:
