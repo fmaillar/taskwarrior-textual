@@ -36,7 +36,7 @@ jobs:
       - name: Check CLI version
         run: .venv/bin/taskwarrior-textual --version
 
-      - name: Run Ruff, tests, and branch coverage
+      - name: Run Ruff, mypy, tests, coverage, and package build
         run: make check
 
       - name: Upload quality reports
@@ -44,5 +44,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: reports-python-${{ matrix.python-version }}
-          path: reports/
+          path: |
+            reports/
+            dist/
           if-no-files-found: warn

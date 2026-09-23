@@ -96,7 +96,7 @@ TASKWARRIOR_COMMAND=/usr/local/bin/task taskwarrior-textual
 
 ### Tests and coverage reports
 
-The project requires at least 95% branch-aware coverage. Generate reviewable reports with:
+The project requires 100% branch-aware coverage. Generate reviewable reports with:
 
 ```sh
 make report
@@ -112,8 +112,7 @@ This writes compact, Git-friendly artifacts to `reports/`:
 - `coverage.json`: detailed coverage data
 - `pytest-exit-status.txt`: pytest exit status
 
-The reported quality gate now runs Ruff before pytest, so the normal report workflow
-checks both lint and branch-aware test coverage.
+The reported quality gate runs Ruff, mypy, pytest with branch-aware coverage, and a wheel/sdist build. `make check` is therefore the single local/CI gate for lint, static typing, tests, coverage, and packaging.
 
 To generate, commit and push those reports in one command:
 

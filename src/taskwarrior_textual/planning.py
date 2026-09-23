@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import cast
 
 from .config import PlanningSettings, WorkingCalendar
 from .models import Task
@@ -320,7 +321,7 @@ def build_absolute_schedule(
         if task.scheduled
         and (
             scheduled[uuid] is None
-            or not calendar.is_working_time(scheduled[uuid])
+            or not calendar.is_working_time(cast(datetime, scheduled[uuid]))
         )
     )
     invalid_scheduled_uuids = {
@@ -329,7 +330,7 @@ def build_absolute_schedule(
         if task.scheduled
         and (
             scheduled[uuid] is None
-            or not calendar.is_working_time(scheduled[uuid])
+            or not calendar.is_working_time(cast(datetime, scheduled[uuid]))
         )
     }
     anchors = [

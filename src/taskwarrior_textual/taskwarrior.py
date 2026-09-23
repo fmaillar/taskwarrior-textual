@@ -11,7 +11,7 @@ import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from .models import Task
 
@@ -60,7 +60,7 @@ class TaskwarriorClient:
             )
 
     def _run(self, args: Sequence[str]) -> str:
-        command = [self.command, *args]
+        command = [cast(str, self.command), *args]
         try:
             completed = subprocess.run(command, check=False, capture_output=True, text=True)
         except OSError as exc:
@@ -132,8 +132,8 @@ class TaskwarriorClient:
             start_text = interval.get("start")
             if not isinstance(tags, list) or not isinstance(start_text, str):
                 continue
-            task = unique.get(frozenset(str(tag) for tag in tags))
-            if task is None:
+            matched_task = unique.get(frozenset(str(tag) for tag in tags))
+            if matched_task is None:
                 continue
             try:
                 start = datetime.strptime(start_text, "%Y%m%dT%H%M%S%z")
@@ -147,7 +147,7 @@ class TaskwarriorClient:
                 continue
             matched.append(
                 TimewarriorInterval(
-                    task_uuid=task.uuid,
+                    task_uuid=matched_task.uuid,
                     start=start,
                     end=max(start, parsed_end),
                 )

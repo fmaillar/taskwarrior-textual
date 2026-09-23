@@ -6,13 +6,15 @@ VENV ?= .venv
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 RUFF := $(VENV)/bin/ruff
+MYPY := $(VENV)/bin/mypy
+BUILD := $(VENV)/bin/python -m build
 COVERAGE := $(VENV)/bin/coverage
 PYTEST_JOBS ?= auto
 INSTALL_STAMP := $(VENV)/.taskwarrior-textual-installed
 
 REPORT_DIR := reports
 
-.PHONY: help venv install reinstall test test-serial coverage report lint check push-reports clean
+.PHONY: help venv install reinstall test test-serial coverage report lint typecheck package check push-reports clean
 
 help:
 	@printf '%s\n' \
@@ -24,7 +26,9 @@ help:
 	  'make coverage      Run parallel tests and generate coverage reports' \
 	  'make report        Generate Ruff + pytest/coverage reports and statuses' \
 	  'make lint          Run Ruff' \
-	  'make check         Run the full reported quality gate' \
+	  'make typecheck     Run mypy over the package' \
+	  'make package       Build wheel and source distribution' \
+	  'make check         Run Ruff, mypy, tests/coverage, and package build' \
 	  'make push-reports  Always commit/push reports, even when tests fail' \
 	  'make clean         Remove generated local artifacts'
 
@@ -62,6 +66,9 @@ report: install
 	$(RUFF) check src tests 2>&1 | tee "$(REPORT_DIR)/ruff.txt"; \
 	lint_status=$${PIPESTATUS[0]}; \
 	printf '%s\n' "$$lint_status" > "$(REPORT_DIR)/ruff-exit-status.txt"; \
+	$(MYPY) 2>&1 | tee "$(REPORT_DIR)/mypy.txt"; \
+	type_status=$${PIPESTATUS[0]}; \
+	printf '%s\n' "$$type_status" > "$(REPORT_DIR)/mypy-exit-status.txt"; \
 	$(PYTEST) -n "$(PYTEST_JOBS)" \
 	  --junitxml="$(REPORT_DIR)/junit.xml" \
 	  --cov-report=term-missing \
@@ -73,12 +80,22 @@ report: install
 	if [ $$lint_status -ne 0 ]; then \
 		exit $$lint_status; \
 	fi; \
+	if [ $$type_status -ne 0 ]; then \
+		exit $$type_status; \
+	fi; \
 	exit $$test_status
 
 lint: install
 	$(RUFF) check src tests
 
-check: report
+typecheck: install
+	$(MYPY)
+
+package: install
+	rm -rf dist
+	$(BUILD)
+
+check: report package
 push-reports: install
 	@set +e; \
 	$(MAKE) --no-print-directory report; \
@@ -102,4 +119,4 @@ push-reports: install
 	exit 0
 
 clean:
-	rm -rf htmlcov .coverage .pytest_cache .ruff_cache "$(REPORT_DIR)"
+	rm -rf htmlcov .coverage .pytest_cache .ruff_cache .mypy_cache build dist "$(REPORT_DIR)"
