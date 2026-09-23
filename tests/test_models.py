@@ -1,3 +1,5 @@
+import pytest
+
 from taskwarrior_textual.models import Task, format_taskwarrior_datetime
 
 
@@ -138,3 +140,21 @@ def test_positive_direct_estimate_counts_as_defined() -> None:
 
     assert task.has_estimate is True
     assert task.is_milestone is False
+
+
+
+@pytest.mark.parametrize("raw", [None, "", "not-a-number", -1, "-2.5"])
+def test_invalid_or_negative_export_estimate_is_treated_as_missing(raw) -> None:
+    task = Task.from_export(
+        {
+            "uuid": "abababab-1234-1234-1234-123456789abc",
+            "description": "Bad estimate",
+            "status": "pending",
+            "estimate": raw,
+        }
+    )
+
+    assert task.estimate_hours == 0.0
+    assert task.has_estimate is False
+    assert task.is_milestone is False
+    assert task.display_estimate == ""
