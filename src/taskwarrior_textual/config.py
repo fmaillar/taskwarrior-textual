@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
@@ -54,11 +54,14 @@ class PlanningSettings:
             raise ValueError("workdays must contain unique weekday numbers from 0 to 6")
 
     @staticmethod
-    def _parse_clock(value: str) -> datetime:
+    def _parse_clock(value: str) -> time:
         try:
-            return datetime.strptime(value, "%H:%M")
+            parsed = time.fromisoformat(value)
         except ValueError as exc:
             raise ValueError(f"invalid work periods clock value: {value}") from exc
+        if len(value) != 5 or value[2] != ":":
+            raise ValueError(f"invalid work periods clock value: {value}")
+        return parsed
 
     def _validate_work_periods(self) -> None:
         if not self.work_periods:
@@ -90,7 +93,10 @@ class PlanningSettings:
         for start_text, end_text in self.work_periods:
             start = self._parse_clock(start_text)
             end = self._parse_clock(end_text)
-            total_seconds += (end - start).total_seconds()
+            total_seconds += (
+                datetime.combine(date.min, end, tzinfo=UTC)
+                - datetime.combine(date.min, start, tzinfo=UTC)
+            ).total_seconds()
         return total_seconds / 3600
 
 
@@ -112,12 +118,12 @@ class WorkingCalendar:
             return ()
         periods = []
         for start_text, end_text in self.settings.work_periods:
-            start_time = self.settings._parse_clock(start_text).time()
-            end_time = self.settings._parse_clock(end_text).time()
+            start_time = self.settings._parse_clock(start_text)
+            end_time = self.settings._parse_clock(end_text)
             periods.append(
                 (
-                    datetime.combine(value, start_time),
-                    datetime.combine(value, end_time),
+                    datetime.combine(value, start_time, tzinfo=UTC),
+                    datetime.combine(value, end_time, tzinfo=UTC),
                 )
             )
         return tuple(sorted(periods))
@@ -138,7 +144,7 @@ class WorkingCalendar:
                 if start >= probe:
                     return start
             day += timedelta(days=1)
-            probe = datetime.combine(day, datetime.min.time())
+            probe = datetime.combine(day, time.min, tzinfo=UTC)
 
     def add_working_hours(self, start: datetime, hours: float) -> datetime:
         """Add non-negative work duration, skipping breaks and non-working days."""
