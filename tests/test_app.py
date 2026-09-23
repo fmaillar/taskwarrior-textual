@@ -5,6 +5,7 @@ from textual.widgets import Button, Input
 from taskwarrior_textual import app as app_module
 from taskwarrior_textual.app import (
     ConfirmDelete,
+    DependencyScreen,
     ProjectFilterForm,
     SearchForm,
     TaskForm,
@@ -202,6 +203,60 @@ async def test_table_uses_enriched_row_shape() -> None:
         await pilot.pause()
         table = app.query_one("#tasks")
         assert list(table.get_row_at(0)) == list(TaskwarriorApp._task_row(TASK, "pending"))
+
+
+def test_dependency_summary_resolves_known_tasks_and_reverse_links() -> None:
+    summary = TaskwarriorApp._dependency_summary(SEARCH_TASKS[1], SEARCH_TASKS)
+
+    assert "Depends on" in summary
+    assert "aaaaaaaa Write release notes" in summary
+    assert "Required by" not in summary
+
+    reverse = TaskwarriorApp._dependency_summary(SEARCH_TASKS[0], SEARCH_TASKS)
+    assert "Required by" in reverse
+    assert "bbbbbbbb Fix mail server" in reverse
+
+
+def test_dependency_summary_keeps_unknown_dependencies_visible() -> None:
+    task = Task(
+        uuid="dddddddd-1111-2222-3333-444444444444",
+        description="External dependency",
+        status="pending",
+        depends=("99999999-aaaa-bbbb-cccc-dddddddddddd",),
+    )
+
+    summary = TaskwarriorApp._dependency_summary(task, [task])
+
+    assert "99999999" in summary
+    assert "No dependencies" not in summary
+
+
+def test_dependency_summary_reports_empty_neighborhood() -> None:
+    summary = TaskwarriorApp._dependency_summary(SEARCH_TASKS[2], SEARCH_TASKS)
+    assert "No dependencies in current view." in summary
+
+
+async def test_dependency_key_opens_local_dependency_screen_without_refetch() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial_view_calls = client.calls.count(("view", "pending"))
+        table = app.query_one("#tasks")
+        table.move_cursor(row=1)
+
+        await pilot.press("g")
+        await pilot.pause()
+
+        assert isinstance(app.screen, DependencyScreen)
+        body = str(app.screen.query_one("#dependency-body").render())
+        assert "aaaaaaaa Write release notes" in body
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, DependencyScreen)
 
 
 async def test_selected_task_is_none_with_empty_table() -> None:
