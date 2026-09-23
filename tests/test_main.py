@@ -35,7 +35,10 @@ def test_main_version_does_not_launch_app(monkeypatch, capsys) -> None:
     main_module.main(["--version"])
 
     assert called == []
-    assert capsys.readouterr().out.strip() == "taskwarrior-textual 0.1.0"
+    assert (
+        capsys.readouterr().out.strip()
+        == f"taskwarrior-textual {main_module.__version__}"
+    )
 
 
 def test_main_prints_config_path_without_loading_config(monkeypatch, capsys, tmp_path) -> None:
