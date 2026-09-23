@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 
+from .config import PlanningSettings, WorkingCalendar
 from .models import Task
 
 
@@ -208,11 +209,15 @@ def parse_taskwarrior_datetime(value: str) -> datetime | None:
         return None
 
 
-def build_absolute_schedule(graph: PlanningGraph) -> AbsoluteSchedule | None:
-    """Build an absolute UTC schedule from scheduled constraints and estimates."""
+def build_absolute_schedule(
+    graph: PlanningGraph,
+    settings: PlanningSettings | None = None,
+) -> AbsoluteSchedule | None:
+    """Build an absolute UTC schedule using the configured working calendar."""
     if graph.cyclic:
         return None
 
+    calendar = WorkingCalendar(settings or PlanningSettings())
     scheduled = {
         uuid: parse_taskwarrior_datetime(task.scheduled)
         for uuid, task in graph.by_uuid.items()
@@ -220,9 +225,26 @@ def build_absolute_schedule(graph: PlanningGraph) -> AbsoluteSchedule | None:
     invalid_scheduled = sorted(
         task.short_uuid
         for uuid, task in graph.by_uuid.items()
-        if task.scheduled and scheduled[uuid] is None
+        if task.scheduled
+        and (
+            scheduled[uuid] is None
+            or not calendar.is_working_time(scheduled[uuid])
+        )
     )
-    anchors = [value for value in scheduled.values() if value is not None]
+    invalid_scheduled_uuids = {
+        uuid
+        for uuid, task in graph.by_uuid.items()
+        if task.scheduled
+        and (
+            scheduled[uuid] is None
+            or not calendar.is_working_time(scheduled[uuid])
+        )
+    }
+    anchors = [
+        value
+        for uuid, value in scheduled.items()
+        if value is not None and uuid not in invalid_scheduled_uuids
+    ]
     if not anchors:
         return None
     origin = min(anchors)
@@ -234,16 +256,23 @@ def build_absolute_schedule(graph: PlanningGraph) -> AbsoluteSchedule | None:
     invalid_due: list[str] = []
 
     for uuid in graph.order:
+        if uuid in invalid_scheduled_uuids:
+            continue
+
+        dependencies = graph.dependencies[uuid]
+        if any(dependency not in finishes for dependency in dependencies):
+            continue
+
         candidates = [origin]
         explicit_start = scheduled[uuid]
         if explicit_start is not None:
             candidates.append(explicit_start)
-        candidates.extend(
-            finishes[dependency]
-            for dependency in graph.dependencies[uuid]
+        candidates.extend(finishes[dependency] for dependency in dependencies)
+        start = calendar.next_working_time(max(candidates))
+        finish = calendar.add_working_hours(
+            start,
+            graph.by_uuid[uuid].estimate_hours,
         )
-        start = max(candidates)
-        finish = start + timedelta(hours=graph.by_uuid[uuid].estimate_hours)
         starts[uuid] = start
         finishes[uuid] = finish
 
@@ -251,14 +280,26 @@ def build_absolute_schedule(graph: PlanningGraph) -> AbsoluteSchedule | None:
         due = parse_taskwarrior_datetime(raw_due)
         if raw_due and due is None:
             invalid_due.append(graph.by_uuid[uuid].short_uuid)
-        if due is not None:
+            continue
+        if due is None:
+            continue
+
+        if due.hour == 0 and due.minute == 0 and due.second == 0:
+            try:
+                deadline = calendar.deadline_for_date(due.date().isoformat())
+            except ValueError:
+                invalid_due.append(graph.by_uuid[uuid].short_uuid)
+                continue
+        else:
+            if not calendar.is_working_time(due):
+                invalid_due.append(graph.by_uuid[uuid].short_uuid)
+                continue
             deadline = due
-            if due.hour == 0 and due.minute == 0 and due.second == 0:
-                deadline += timedelta(days=1)
-            slack_hours = (deadline - finish).total_seconds() / 3600
-            due_slack[uuid] = slack_hours
-            if slack_hours < 0:
-                late_by[uuid] = -slack_hours
+
+        slack_hours = (deadline - finish).total_seconds() / 3600
+        due_slack[uuid] = slack_hours
+        if slack_hours < 0:
+            late_by[uuid] = -slack_hours
 
     return AbsoluteSchedule(
         graph=graph,
