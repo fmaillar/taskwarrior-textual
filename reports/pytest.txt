@@ -5,24 +5,26 @@ configfile: pyproject.toml
 testpaths: tests
 plugins: asyncio-1.4.0, cov-7.1.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collected 92 items
+collected 98 items
 
-tests/test_app.py ...................................................... [ 58%]
-.......                                                                  [ 66%]
-tests/test_main.py ..                                                    [ 68%]
-tests/test_models.py ......                                              [ 75%]
+tests/test_app.py ...................................................... [ 55%]
+............                                                             [ 67%]
+tests/test_main.py ..                                                    [ 69%]
+tests/test_models.py .......                                             [ 76%]
 tests/test_taskwarrior.py .......................                        [100%]
 
 - generated xml file: /home/fgm/projets/taskwarrior-textual/reports/junit.xml --
 ================================ tests coverage ================================
 _______________ coverage: platform linux, python 3.13.5-final-0 ________________
 
-Name    Stmts   Miss Branch BrPart  Cover   Missing
----------------------------------------------------
-TOTAL     600      0    116      0   100%
+Name                             Stmts   Miss Branch BrPart  Cover   Missing
+----------------------------------------------------------------------------
+src/taskwarrior_textual/app.py     540      1    130      1    99%   806
+----------------------------------------------------------------------------
+TOTAL                              682      1    146      1    99%
 
-5 files skipped due to complete coverage.
+4 files skipped due to complete coverage.
 Coverage HTML written to dir htmlcov
 Coverage XML written to file reports/coverage.xml
-Required test coverage of 95.0% reached. Total coverage: 100.00%
-============================= 92 passed in 39.56s ==============================
+Required test coverage of 95.0% reached. Total coverage: 99.76%
+============================= 98 passed in 40.70s ==============================
