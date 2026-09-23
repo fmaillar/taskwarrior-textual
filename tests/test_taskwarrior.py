@@ -128,6 +128,38 @@ def test_timewarrior_hours_ignores_unmatched_and_ambiguous_task_signatures() -> 
     assert hours == {unique.uuid: 0.5}
 
 
+def test_timewarrior_hours_ignores_malformed_intervals() -> None:
+    task = Task(
+        uuid="dddddddd-1111-1111-1111-111111111111",
+        description="Unique",
+        status="pending",
+    )
+    client = TimewarriorRecordingClient()
+    client.timewarrior_output = json.dumps(
+        [
+            "not-an-object",
+            {"tags": "Unique", "start": "20260923T080000Z"},
+            {"tags": ["Unique"], "start": 123},
+            {"tags": ["Unique"], "start": "bad-date"},
+            {
+                "tags": ["Unique"],
+                "start": "20260923T100000Z",
+                "end": "bad-date",
+            },
+            {
+                "tags": ["Unique"],
+                "start": "20260923T110000Z",
+                "end": "20260923T100000Z",
+            },
+        ]
+    )
+
+    assert client.timewarrior_hours(
+        [task],
+        now=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
+    ) == {task.uuid: 0.0}
+
+
 def test_timewarrior_hours_returns_empty_when_timewarrior_is_unavailable() -> None:
     client = RecordingClient()
     client.timewarrior_command = None
@@ -306,6 +338,61 @@ def test_client_errors_when_task_is_missing(monkeypatch) -> None:
     monkeypatch.setattr("taskwarrior_textual.taskwarrior.shutil.which", lambda name: None)
     with pytest.raises(TaskwarriorError, match="not found"):
         TaskwarriorClient()
+
+
+def test_client_uses_timewarrior_environment_override(monkeypatch) -> None:
+    monkeypatch.setenv("TIMEWARRIOR_COMMAND", "/custom/timew")
+    client = TaskwarriorClient(command="/bin/task")
+
+    assert client.timewarrior_command == "/custom/timew"
+
+
+def test_run_timewarrior_requires_executable() -> None:
+    client = TaskwarriorClient(command="/bin/task", timewarrior_command="")
+    with pytest.raises(TaskwarriorError, match="Timewarrior executable not found"):
+        client._run_timewarrior(["export"])
+
+
+def test_run_timewarrior_returns_stdout(monkeypatch) -> None:
+    class Result:
+        returncode = 0
+        stdout = "[]\n"
+        stderr = ""
+
+    monkeypatch.setattr(
+        "taskwarrior_textual.taskwarrior.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+    client = TaskwarriorClient(command="/bin/task", timewarrior_command="/bin/timew")
+
+    assert client._run_timewarrior(["export"]) == "[]\n"
+
+
+def test_run_timewarrior_raises_on_nonzero_exit(monkeypatch) -> None:
+    class Result:
+        returncode = 2
+        stdout = ""
+        stderr = "timew boom"
+
+    monkeypatch.setattr(
+        "taskwarrior_textual.taskwarrior.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+    client = TaskwarriorClient(command="/bin/task", timewarrior_command="/bin/timew")
+
+    with pytest.raises(TaskwarriorError, match="timew boom"):
+        client._run_timewarrior(["export"])
+
+
+def test_run_timewarrior_wraps_oserror(monkeypatch) -> None:
+    def explode(*args, **kwargs):
+        raise OSError("noexec")
+
+    monkeypatch.setattr("taskwarrior_textual.taskwarrior.subprocess.run", explode)
+    client = TaskwarriorClient(command="/bin/task", timewarrior_command="/bin/timew")
+
+    with pytest.raises(TaskwarriorError, match="Cannot execute"):
+        client._run_timewarrior(["export"])
 
 
 def test_run_returns_stdout(monkeypatch) -> None:
