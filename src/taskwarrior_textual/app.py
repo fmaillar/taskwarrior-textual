@@ -552,6 +552,37 @@ class DependencyScreen(ModalScreen[None]):
         self.dismiss(None)
 
 
+class PlanningHealthScreen(ModalScreen[None]):
+    """Read-only planning health report."""
+
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [("escape", "close", "Close")]
+
+    CSS = """
+    PlanningHealthScreen { align: center middle; }
+    #planning-health-box {
+        width: 92%;
+        max-width: 130;
+        height: auto;
+        max-height: 90%;
+        padding: 1 2;
+        border: round $accent;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, body: str) -> None:
+        super().__init__()
+        self.body = body
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="planning-health-box"):
+            yield Label("Planning health")
+            yield Static(self.body, id="planning-health-body")
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 class ScheduleProposalScreen(ModalScreen[bool]):
     """Preview an auto-schedule proposal before applying it."""
 
@@ -802,6 +833,7 @@ class TaskwarriorApp(App[None]):
         ("shift+g", "show_dependency_overview", "Dependency graph"),
         ("shift+c", "show_critical_path", "Critical path"),
         ("shift+h", "show_gantt", "Gantt"),
+        ("shift+i", "show_planning_health", "Health"),
         ("shift+l", "show_calendar_plan", "Calendar"),
         ("shift+k", "show_constraints", "Constraints"),
         ("shift+m", "show_milestones", "Milestones"),
@@ -1807,6 +1839,161 @@ class TaskwarriorApp(App[None]):
         return "\n".join(lines)
 
     @staticmethod
+    def _planning_health(
+        tasks: list[Task],
+        settings: PlanningSettings | None = None,
+        *,
+        now: datetime | None = None,
+        tracked_hours: dict[str, float] | None = None,
+    ) -> str:
+        """Report structural, scheduling, estimate, and effort planning issues."""
+        if not tasks:
+            return "No tasks in current view."
+
+        resolved_settings = settings or PlanningSettings()
+        resolved_now = now or datetime.now(UTC)
+        calendar = WorkingCalendar(resolved_settings)
+        graph = build_planning_graph(tasks)
+        tracked = tracked_hours or {}
+
+        unestimated = sorted(
+            task.short_uuid
+            for task in tasks
+            if not task.has_estimate
+        )
+        invalid_scheduled: list[str] = []
+        invalid_due: list[str] = []
+        for task in tasks:
+            if task.scheduled:
+                scheduled = parse_taskwarrior_datetime(task.scheduled)
+                if scheduled is None or not calendar.is_working_time(scheduled):
+                    invalid_scheduled.append(task.short_uuid)
+            if task.due:
+                due = parse_taskwarrior_datetime(task.due)
+                if due is None:
+                    invalid_due.append(task.short_uuid)
+                elif due.hour == 0 and due.minute == 0 and due.second == 0:
+                    try:
+                        calendar.deadline_for_date(due.date().isoformat())
+                    except ValueError:
+                        invalid_due.append(task.short_uuid)
+                elif not calendar.is_working_time(due):
+                    invalid_due.append(task.short_uuid)
+
+        overtracked = sorted(
+            (
+                task.short_uuid,
+                tracked.get(task.uuid, 0.0) - task.estimate_hours,
+            )
+            for task in tasks
+            if task.has_estimate
+            and tracked.get(task.uuid, 0.0) > task.estimate_hours
+        )
+
+        projected_late: list[tuple[str, float]] = []
+        if not graph.cyclic:
+            schedule = build_absolute_schedule(
+                graph,
+                resolved_settings,
+                now=resolved_now,
+                tracked_hours=tracked_hours,
+                origin=resolved_now,
+            )
+            assert schedule is not None
+            projected_late = sorted(
+                (
+                    graph.by_uuid[uuid].short_uuid,
+                    hours,
+                )
+                for uuid, hours in schedule.late_by.items()
+            )
+
+        issue_count = (
+            len(graph.cycle_nodes)
+            + len(graph.blocked_by_cycle)
+            + len(graph.unresolved)
+            + len(unestimated)
+            + len(invalid_scheduled)
+            + len(invalid_due)
+            + len(projected_late)
+            + len(overtracked)
+        )
+
+        lines = [
+            "Planning health",
+            (
+                f"Tasks: {len(tasks)} | Cycle nodes: {len(graph.cycle_nodes)} | "
+                f"Blocked by cycle: {len(graph.blocked_by_cycle)} | "
+                f"Unresolved: {len(graph.unresolved)}"
+            ),
+            (
+                f"Unestimated: {len(unestimated)} | "
+                f"Invalid scheduled: {len(invalid_scheduled)} | "
+                f"Invalid due: {len(invalid_due)} | "
+                f"Projected late: {len(projected_late)} | "
+                f"Overtracked: {len(overtracked)}"
+            ),
+            "Health: clean" if issue_count == 0 else f"Health: {issue_count} issue(s)",
+        ]
+
+        if graph.cycle_nodes:
+            lines.append(
+                "Cycle nodes: "
+                + ", ".join(
+                    graph.by_uuid[uuid].short_uuid
+                    for uuid in sorted(
+                        graph.cycle_nodes,
+                        key=lambda item: (graph.by_uuid[item].short_uuid, item),
+                    )
+                )
+            )
+        if graph.blocked_by_cycle:
+            lines.append(
+                "Blocked by cycle: "
+                + ", ".join(
+                    graph.by_uuid[uuid].short_uuid
+                    for uuid in sorted(
+                        graph.blocked_by_cycle,
+                        key=lambda item: (graph.by_uuid[item].short_uuid, item),
+                    )
+                )
+            )
+        if graph.unresolved:
+            lines.append(
+                "Unresolved dependencies: "
+                + "; ".join(
+                    f"{task_uuid} -> {dependency_uuid}"
+                    for task_uuid, dependency_uuid in graph.unresolved
+                )
+            )
+        if unestimated:
+            lines.append("Unestimated tasks: " + ", ".join(unestimated))
+        if invalid_scheduled:
+            lines.append(
+                "Invalid scheduled: " + ", ".join(sorted(invalid_scheduled))
+            )
+        if invalid_due:
+            lines.append("Invalid due: " + ", ".join(sorted(invalid_due)))
+        if projected_late:
+            lines.append(
+                "Projected late tasks: "
+                + "; ".join(
+                    f"{uuid} +{hours:.2f}h"
+                    for uuid, hours in projected_late
+                )
+            )
+        if overtracked:
+            lines.append(
+                "Overtracked estimates: "
+                + "; ".join(
+                    f"{uuid} +{hours:.2f}h"
+                    for uuid, hours in overtracked
+                )
+            )
+
+        return "\n".join(lines)
+
+    @staticmethod
     def _schedule_proposal(
         project: str,
         project_tasks: list[Task],
@@ -2362,6 +2549,26 @@ class TaskwarriorApp(App[None]):
         self.push_screen(
             CriticalPathScreen(
                 self._critical_path_summary(
+                    tasks,
+                    self.planning_settings,
+                    now=now,
+                    tracked_hours=tracked_hours,
+                )
+            )
+        )
+
+    def action_show_planning_health(self) -> None:
+        """Show planning health for the expanded current view."""
+        tasks = self._expanded_planning_tasks()
+        if tasks is None:
+            return
+        context = self._tracked_planning_context(tasks)
+        if context is None:
+            return
+        tracked_hours, now = context
+        self.push_screen(
+            PlanningHealthScreen(
+                self._planning_health(
                     tasks,
                     self.planning_settings,
                     now=now,
