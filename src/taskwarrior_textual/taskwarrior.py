@@ -94,8 +94,6 @@ class TaskwarriorClient:
         while frontier and (depth == -1 or level < depth):
             next_frontier: set[str] = set()
             for dependency in frontier:
-                if dependency in expanded:
-                    continue
                 matches = self.export(dependency)
                 fetched = next(
                     (task for task in matches if task.uuid == dependency),
