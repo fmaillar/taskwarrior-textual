@@ -335,11 +335,18 @@ def test_dependency_overview_detects_cycles() -> None:
         status="pending",
         depends=(first.uuid,),
     )
+    downstream = Task(
+        uuid="cccccccc-1111-2222-3333-444444444444",
+        description="Downstream",
+        status="pending",
+        depends=(first.uuid,),
+    )
 
-    summary = TaskwarriorApp._dependency_overview([second, first])
+    summary = TaskwarriorApp._dependency_overview([downstream, second, first])
 
-    assert "Tasks: 2 | Resolved edges: 2 | Unresolved: 0" in summary
+    assert "Tasks: 3 | Resolved edges: 3 | Unresolved: 0" in summary
     assert "Cycle detected among: aaaaaaaa First; bbbbbbbb Second" in summary
+    assert "Blocked by cycle: cccccccc Downstream" in summary
     assert "Layer 0:" not in summary
 
 
