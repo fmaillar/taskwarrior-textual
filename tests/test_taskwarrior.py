@@ -381,3 +381,36 @@ def test_udas_result_is_cached() -> None:
     assert client.has_uda("estimate") is True
     assert client.has_uda("estimate") is True
     assert client.calls == [["_udas"]]
+
+
+
+@pytest.mark.parametrize("estimate", ["nope", "-1", "-0.5", "nan", "inf", "-inf"])
+def test_add_rejects_invalid_estimate_values(estimate: str) -> None:
+    client = UdaRecordingClient("estimate\n")
+
+    with pytest.raises(TaskwarriorError, match="estimate"):
+        client.add("Example", estimate=estimate)
+
+    assert client.calls == [["_udas"]]
+
+
+@pytest.mark.parametrize("estimate", ["nope", "-1", "-0.5", "nan", "inf", "-inf"])
+def test_modify_rejects_invalid_estimate_values(estimate: str) -> None:
+    client = UdaRecordingClient("estimate\n")
+
+    with pytest.raises(TaskwarriorError, match="estimate"):
+        client.modify("12345678", "Example", estimate=estimate)
+
+    assert client.calls == [["_udas"]]
+
+
+@pytest.mark.parametrize("estimate", ["0", "0.0", "1", "2.5"])
+def test_valid_nonnegative_estimates_are_forwarded(estimate: str) -> None:
+    client = UdaRecordingClient("estimate\n")
+
+    client.add("Example", estimate=estimate)
+
+    assert client.calls == [
+        ["_udas"],
+        ["add", "Example", f"estimate:{estimate}"],
+    ]
