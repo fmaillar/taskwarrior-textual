@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 
 import pytest
 
@@ -33,6 +34,118 @@ class RecordingClient(TaskwarriorClient):
         if list(args) == ["_udas"]:
             return "estimate\n"
         return "ok"
+
+
+class TimewarriorRecordingClient(TaskwarriorClient):
+    def __post_init__(self) -> None:
+        self.command = "task"
+        self.timewarrior_command = "timew"
+        self.timewarrior_output = "[]"
+        self.timewarrior_calls: list[list[str]] = []
+
+    def _run_timewarrior(self, args):  # type: ignore[override]
+        self.timewarrior_calls.append(list(args))
+        return self.timewarrior_output
+
+
+def test_timewarrior_hours_sums_closed_and_open_intervals_for_unique_task_signature() -> None:
+    task = Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Implement planner",
+        status="pending",
+        project="Work",
+        tags=("python",),
+        estimate_hours=8.0,
+    )
+    client = TimewarriorRecordingClient()
+    client.timewarrior_output = json.dumps(
+        [
+            {
+                "start": "20260923T080000Z",
+                "end": "20260923T090000Z",
+                "tags": ["Implement planner", "Work", "python"],
+            },
+            {
+                "start": "20260923T100000Z",
+                "tags": ["python", "Work", "Implement planner"],
+            },
+        ]
+    )
+
+    hours = client.timewarrior_hours(
+        [task],
+        now=datetime(2026, 9, 23, 11, 30, tzinfo=UTC),
+    )
+
+    assert hours == {task.uuid: 2.5}
+    assert client.timewarrior_calls == [["export"]]
+
+
+def test_timewarrior_hours_ignores_unmatched_and_ambiguous_task_signatures() -> None:
+    first = Task(
+        uuid="aaaaaaaa-1111-1111-1111-111111111111",
+        description="Same",
+        status="pending",
+        project="P",
+    )
+    second = Task(
+        uuid="bbbbbbbb-1111-1111-1111-111111111111",
+        description="Same",
+        status="pending",
+        project="P",
+    )
+    unique = Task(
+        uuid="cccccccc-1111-1111-1111-111111111111",
+        description="Unique",
+        status="pending",
+    )
+    client = TimewarriorRecordingClient()
+    client.timewarrior_output = json.dumps(
+        [
+            {
+                "start": "20260923T080000Z",
+                "end": "20260923T090000Z",
+                "tags": ["Same", "P"],
+            },
+            {
+                "start": "20260923T090000Z",
+                "end": "20260923T100000Z",
+                "tags": ["Other"],
+            },
+            {
+                "start": "20260923T100000Z",
+                "end": "20260923T103000Z",
+                "tags": ["Unique"],
+            },
+        ]
+    )
+
+    hours = client.timewarrior_hours(
+        [first, second, unique],
+        now=datetime(2026, 9, 23, 11, 0, tzinfo=UTC),
+    )
+
+    assert hours == {unique.uuid: 0.5}
+
+
+def test_timewarrior_hours_returns_empty_when_timewarrior_is_unavailable() -> None:
+    client = RecordingClient()
+    client.timewarrior_command = None
+
+    assert client.timewarrior_hours([Task(
+        uuid="11111111-1111-1111-1111-111111111111",
+        description="Task",
+        status="pending",
+    )]) == {}
+
+
+@pytest.mark.parametrize("payload", ["not-json", "{}"])
+def test_timewarrior_hours_rejects_invalid_export(payload: str) -> None:
+    client = TimewarriorRecordingClient()
+    client.timewarrior_output = payload
+
+    with pytest.raises(TaskwarriorError, match="Timewarrior"):
+        client.timewarrior_hours([])
 
 
 def test_pending_parses_export() -> None:
