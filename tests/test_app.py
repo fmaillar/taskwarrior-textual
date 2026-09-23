@@ -200,7 +200,13 @@ async def test_app_mounts_and_displays_pending_task() -> None:
 
 
 def test_task_row_shows_active_marker_tags_and_due_in_pending_view() -> None:
-    row = TaskwarriorApp._task_row(TASK, "pending")
+    row = TaskwarriorApp._task_row(
+        TASK,
+        "pending",
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+        tracked_hours={TASK.uuid: 1.0},
+    )
 
     assert row == (
         TASK.short_uuid,
@@ -212,8 +218,29 @@ def test_task_row_shows_active_marker_tags_and_due_in_pending_view() -> None:
         "mail,rms",
         "Vérifier mail de RMS",
         "2.50h",
+        "1.00h",
+        "1.50h",
         "9.38",
     )
+
+
+def test_task_row_leaves_tracked_blank_when_timewarrior_has_no_match() -> None:
+    task = Task(
+        uuid="abababab-bbbb-cccc-dddd-eeeeeeeeeeee",
+        description="Estimated",
+        status="pending",
+        estimate_hours=3.0,
+    )
+
+    row = TaskwarriorApp._task_row(
+        task,
+        "pending",
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+        tracked_hours={},
+    )
+
+    assert row[8:11] == ("3.00h", "", "3.00h")
 
 
 def test_task_row_uses_view_specific_date() -> None:
@@ -1412,19 +1439,29 @@ def test_project_overview_does_not_count_milestones_as_unestimated() -> None:
         project="Release",
     )
 
-    summary = TaskwarriorApp._project_overview([milestone, missing])
+    summary = TaskwarriorApp._project_overview(
+        [milestone, missing],
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+        tracked_hours={},
+    )
 
-    assert "Release | 2 | 0 | 0 | 0.00h | 1 | 0.00" in summary
+    assert "Release | 2 | 0 | 0 | 0.00h | 0.00h | 0.00h | 1 | 0.00" in summary
 
 
 def test_project_overview_groups_current_view_deterministically() -> None:
-    summary = TaskwarriorApp._project_overview(SEARCH_TASKS)
+    summary = TaskwarriorApp._project_overview(
+        SEARCH_TASKS,
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+        tracked_hours={},
+    )
 
     assert summary.splitlines() == [
-        "Project | Tasks | Active | Blocked | Estimate | Unestimated | Urgency",
-        "Docs | 1 | 0 | 0 | 0.00h | 1 | 4.00",
-        "Infra | 1 | 0 | 1 | 0.00h | 1 | 12.00",
-        "(none) | 1 | 0 | 0 | 0.00h | 1 | 1.00",
+        "Project | Tasks | Active | Blocked | Estimate | Tracked | Remaining | Unestimated | Urgency",
+        "Docs | 1 | 0 | 0 | 0.00h | 0.00h | 0.00h | 1 | 4.00",
+        "Infra | 1 | 0 | 1 | 0.00h | 0.00h | 0.00h | 1 | 12.00",
+        "(none) | 1 | 0 | 0 | 0.00h | 0.00h | 0.00h | 1 | 1.00",
     ]
 
 
@@ -1460,9 +1497,33 @@ def test_project_overview_sums_estimates_and_counts_missing() -> None:
         urgency=1.0,
     )
 
-    summary = TaskwarriorApp._project_overview([estimated, unestimated])
+    summary = TaskwarriorApp._project_overview(
+        [estimated, unestimated],
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+        tracked_hours={estimated.uuid: 1.0},
+    )
 
-    assert "Infra | 2 | 0 | 0 | 2.50h | 1 | 3.00" in summary
+    assert "Infra | 2 | 0 | 0 | 2.50h | 1.00h | 1.50h | 1 | 3.00" in summary
+
+
+def test_project_overview_uses_tracked_hours_for_stopped_partial_work() -> None:
+    task = Task(
+        uuid="12121212-1111-2222-3333-444444444444",
+        description="Partial",
+        status="pending",
+        project="Infra",
+        estimate_hours=4.0,
+    )
+
+    summary = TaskwarriorApp._project_overview(
+        [task],
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+        tracked_hours={task.uuid: 1.25},
+    )
+
+    assert "Infra | 1 | 0 | 0 | 4.00h | 1.25h | 2.75h | 0 | 0.00" in summary
 
 
 def test_project_overview_handles_empty_view() -> None:
