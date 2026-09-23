@@ -119,6 +119,11 @@ class WorkingCalendar:
         key = str(localtime.relative_to(zoneinfo_root))
         return ZoneInfo(key)
 
+    @property
+    def timezone(self) -> tzinfo:
+        """Return the configured concrete timezone."""
+        return self._timezone()
+
     def _localize(self, value: date, clock: time) -> datetime:
         zone = self._timezone()
         naive = datetime.combine(value, clock)
