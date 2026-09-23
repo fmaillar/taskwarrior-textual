@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import math
 from typing import Any
 
 
@@ -18,6 +19,19 @@ def format_taskwarrior_datetime(value: str) -> str:
     if dt.hour == 0 and dt.minute == 0 and dt.second == 0:
         return dt.strftime("%Y-%m-%d")
     return dt.strftime("%Y-%m-%d %H:%M")
+
+
+def _estimate_from_export(value: Any) -> tuple[float, bool]:
+    """Return a safe non-negative estimate and whether it was explicitly valid."""
+    if value is None or value == "":
+        return 0.0, False
+    try:
+        estimate = float(value)
+    except (TypeError, ValueError):
+        return 0.0, False
+    if not math.isfinite(estimate) or estimate < 0:
+        return 0.0, False
+    return estimate, True
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +110,7 @@ class Task:
     @classmethod
     def from_export(cls, value: dict[str, Any]) -> "Task":
         """Build a task from one object returned by task export."""
+        estimate_hours, estimate_defined = _estimate_from_export(value.get("estimate"))
         return cls(
             uuid=str(value["uuid"]),
             description=str(value.get("description", "")),
@@ -111,6 +126,6 @@ class Task:
             start=str(value.get("start", "")),
             end=str(value.get("end", "")),
             entry=str(value.get("entry", "")),
-            estimate_hours=float(value.get("estimate", 0.0)),
-            estimate_defined="estimate" in value and value.get("estimate") != "",
+            estimate_hours=estimate_hours,
+            estimate_defined=estimate_defined,
         )
