@@ -6,22 +6,22 @@ testpaths: tests
 plugins: asyncio-1.4.0, cov-7.1.0, xdist-3.8.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
 created: 4/4 workers
-4 workers [268 items]
+4 workers [275 items]
 
 ........................................................................ [ 26%]
-........................................................................ [ 53%]
-........................................................................ [ 80%]
-....................................................                     [100%]
+........................................................................ [ 52%]
+........................................................................ [ 78%]
+...........................................................              [100%]
 - generated xml file: /home/fgm/projets/taskwarrior-textual/reports/junit.xml --
 ================================ tests coverage ================================
 _______________ coverage: platform linux, python 3.13.5-final-0 ________________
 
 Name    Stmts   Miss Branch BrPart  Cover   Missing
 ---------------------------------------------------
-TOTAL    1458      0    406      0   100%
+TOTAL    1529      0    418      0   100%
 
 7 files skipped due to complete coverage.
 Coverage HTML written to dir htmlcov
 Coverage XML written to file reports/coverage.xml
 Required test coverage of 95.0% reached. Total coverage: 100.00%
-============================= 268 passed in 46.67s =============================
+============================= 275 passed in 48.72s =============================
