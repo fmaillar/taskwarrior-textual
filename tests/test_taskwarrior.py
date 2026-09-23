@@ -234,6 +234,7 @@ class ViewRecordingClient(TaskwarriorClient):
         ("waiting", "status:waiting"),
         ("completed", "status:completed"),
         ("deleted", "status:deleted"),
+        ("scheduled", "+SCHEDULED"),
     ],
 )
 def test_named_views_map_to_explicit_taskwarrior_filters(
