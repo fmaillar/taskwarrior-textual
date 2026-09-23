@@ -86,6 +86,7 @@ def test_add_builds_attributes() -> None:
         wait="2026-09-24 08:00",
         scheduled="2026-09-24 09:00",
         depends="11111111, 22222222",
+        estimate="2.5",
     )
     assert client.calls == [[
         "add",
@@ -96,6 +97,7 @@ def test_add_builds_attributes() -> None:
         "wait:2026-09-24 08:00",
         "scheduled:2026-09-24 09:00",
         "depends:11111111,22222222",
+        "estimate:2.5",
         "+home",
         "+next",
     ]]
@@ -120,6 +122,7 @@ def test_modify_replaces_editable_fields() -> None:
         wait="2026-09-24 08:00",
         scheduled="2026-09-24 09:00",
         depends="11111111,22222222",
+        estimate="3.75",
     )
     assert client.calls == [[
         "12345678",
@@ -131,6 +134,7 @@ def test_modify_replaces_editable_fields() -> None:
         "wait:2026-09-24 08:00",
         "scheduled:2026-09-24 09:00",
         "depends:11111111,22222222",
+        "estimate:3.75",
         "-rms",
         "+work",
     ]]
@@ -153,6 +157,7 @@ def test_modify_can_clear_optional_fields() -> None:
         "wait:",
         "scheduled:",
         "depends:",
+        "estimate:",
         "-home",
         "-next",
     ]]
