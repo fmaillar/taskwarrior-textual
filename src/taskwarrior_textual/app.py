@@ -586,6 +586,10 @@ class PlanningHealthScreen(ModalScreen[None]):
 class ScheduleProposalScreen(ModalScreen[bool]):
     """Preview an auto-schedule proposal before applying it."""
 
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+        ("escape", "cancel", "Cancel"),
+    ]
+
     CSS = """
     ScheduleProposalScreen { align: center middle; }
     #schedule-proposal-box {
@@ -621,6 +625,9 @@ class ScheduleProposalScreen(ModalScreen[bool]):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id == "schedule-apply")
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
 
 
 class ProjectDashboardScreen(ModalScreen[None]):
