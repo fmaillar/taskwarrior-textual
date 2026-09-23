@@ -2394,6 +2394,7 @@ def test_planning_health_reports_nonworking_exact_due() -> None:
         description="Bad exact due",
         status="pending",
         due="20260923T120000Z",
+        scheduled="20260923T120000Z",
         estimate_hours=1.0,
     )
 
@@ -2406,6 +2407,8 @@ def test_planning_health_reports_nonworking_exact_due() -> None:
 
     assert "Invalid due: 1" in summary
     assert "Invalid due: 92929292" in summary
+    assert "Invalid scheduled: 1" in summary
+    assert "Invalid scheduled: 92929292" in summary
 
 
 def test_planning_health_reports_projected_lateness() -> None:
@@ -2559,11 +2562,26 @@ def test_schedule_proposal_preserves_existing_scheduled_active_and_external_task
         start="20260923T080000Z",
         estimate_hours=2.0,
     )
+    completed = Task(
+        uuid="44444444-1111-1111-1111-111111111111",
+        description="Completed",
+        status="completed",
+        project="Infra",
+        estimate_hours=2.0,
+    )
+    invalid = Task(
+        uuid="45454545-1111-1111-1111-111111111111",
+        description="Invalid scheduled",
+        status="pending",
+        project="Infra",
+        scheduled="not-a-date",
+        estimate_hours=1.0,
+    )
 
     body, changes = TaskwarriorApp._schedule_proposal(
         "Infra",
-        [fixed, active],
-        [external, fixed, active],
+        [fixed, active, completed, invalid],
+        [external, fixed, active, completed, invalid],
         PlanningSettings(timezone="UTC"),
         now=datetime(2026, 9, 23, 10, 0, tzinfo=UTC),
         tracked_hours={},
