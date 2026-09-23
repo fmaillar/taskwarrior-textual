@@ -1436,6 +1436,63 @@ def test_gantt_distinguishes_milestone_from_missing_estimate() -> None:
     assert "Unestimated tasks shown as ·: 22222222" in summary
 
 
+def test_timewarrior_trend_supports_30_day_current_week_and_current_month() -> None:
+    task = Task(
+        uuid="81818181-1111-1111-1111-111111111111",
+        description="Tracked",
+        status="pending",
+        project="Work",
+    )
+    intervals = (
+        TimewarriorInterval(
+            task_uuid=task.uuid,
+            start=datetime(2026, 9, 1, 8, 0, tzinfo=UTC),
+            end=datetime(2026, 9, 1, 10, 0, tzinfo=UTC),
+        ),
+        TimewarriorInterval(
+            task_uuid=task.uuid,
+            start=datetime(2026, 9, 21, 8, 0, tzinfo=UTC),
+            end=datetime(2026, 9, 21, 9, 0, tzinfo=UTC),
+        ),
+        TimewarriorInterval(
+            task_uuid=task.uuid,
+            start=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+            end=datetime(2026, 9, 23, 11, 0, tzinfo=UTC),
+        ),
+    )
+    settings = PlanningSettings(timezone="UTC")
+    now = datetime(2026, 9, 23, 12, 0, tzinfo=UTC)
+
+    last_30 = TaskwarriorApp._timewarrior_trend(
+        [task], intervals, settings, now=now, period="30d"
+    )
+    current_week = TaskwarriorApp._timewarrior_trend(
+        [task], intervals, settings, now=now, period="week"
+    )
+    current_month = TaskwarriorApp._timewarrior_trend(
+        [task], intervals, settings, now=now, period="month"
+    )
+
+    assert "Last 30 local days through 2026-09-23 (UTC)" in last_30
+    assert "Tracked in window: 6.00h" in last_30
+    assert "Current week 2026-09-21 through 2026-09-27 (UTC)" in current_week
+    assert "Tracked in window: 4.00h" in current_week
+    assert "Current month 2026-09-01 through 2026-09-30 (UTC)" in current_month
+    assert "Tracked in window: 6.00h" in current_month
+
+
+@pytest.mark.parametrize("period", ["", "14d", "quarter"])
+def test_timewarrior_trend_rejects_unknown_period(period: str) -> None:
+    with pytest.raises(ValueError, match="period"):
+        TaskwarriorApp._timewarrior_trend(
+            [],
+            (),
+            PlanningSettings(timezone="UTC"),
+            now=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
+            period=period,
+        )
+
+
 def test_timewarrior_trend_splits_intervals_by_local_day_and_projects() -> None:
     infra = Task(
         uuid="51515151-1111-1111-1111-111111111111",
@@ -1467,7 +1524,7 @@ def test_timewarrior_trend_splits_intervals_by_local_day_and_projects() -> None:
         intervals,
         PlanningSettings(timezone="Europe/Paris"),
         now=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
-        days=7,
+        period="7d",
     )
 
     assert "Last 7 local days through 2026-09-23 (Europe/Paris)" in summary
@@ -1552,6 +1609,51 @@ async def test_timewarrior_trend_key_opens_screen_without_task_refetch() -> None
         await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(app.screen, TimewarriorTrendScreen)
+
+
+async def test_timewarrior_trend_screen_switches_period_without_refetch() -> None:
+    client = FakeUiClient(tasks=[TASK])
+    client.tracked_intervals = (
+        TimewarriorInterval(
+            task_uuid=TASK.uuid,
+            start=datetime(2026, 9, 23, 7, 0, tzinfo=UTC),
+            end=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+        ),
+    )
+    app = TaskwarriorApp(
+        client=client,
+        planning_settings=PlanningSettings(timezone="UTC"),
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+r")
+        await pilot.pause()
+
+        assert isinstance(app.screen, TimewarriorTrendScreen)
+        initial_calls = client.calls.count(("timewarrior_intervals", 1))
+
+        await pilot.press("3")
+        await pilot.pause()
+        body = str(app.screen.query_one("#timewarrior-trend-body").render())
+        assert "Last 30 local days" in body
+
+        await pilot.press("w")
+        await pilot.pause()
+        body = str(app.screen.query_one("#timewarrior-trend-body").render())
+        assert "Current week" in body
+
+        await pilot.press("m")
+        await pilot.pause()
+        body = str(app.screen.query_one("#timewarrior-trend-body").render())
+        assert "Current month" in body
+
+        await pilot.press("7")
+        await pilot.pause()
+        body = str(app.screen.query_one("#timewarrior-trend-body").render())
+        assert "Last 7 local days" in body
+
+        assert client.calls.count(("timewarrior_intervals", 1)) == initial_calls
 
 
 async def test_timewarrior_trend_does_not_open_when_timewarrior_fails() -> None:
