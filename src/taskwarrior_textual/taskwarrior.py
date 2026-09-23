@@ -97,6 +97,7 @@ class TaskwarriorClient:
         wait: str = "",
         scheduled: str = "",
         depends: str = "",
+        estimate: str = "",
         include_empty: bool = False,
     ) -> list[str]:
         values = {
@@ -106,6 +107,7 @@ class TaskwarriorClient:
             "wait": wait,
             "scheduled": scheduled,
             "depends": ",".join(cls._parse_list(depends)),
+            "estimate": estimate,
         }
         return [
             f"{name}:{value}"
@@ -137,6 +139,7 @@ class TaskwarriorClient:
         wait: str = "",
         scheduled: str = "",
         depends: str = "",
+        estimate: str = "",
     ) -> str:
         """Create a task and return Taskwarrior's response."""
         return self._run(
@@ -150,6 +153,7 @@ class TaskwarriorClient:
                     wait=wait,
                     scheduled=scheduled,
                     depends=depends,
+                    estimate=estimate,
                 ),
                 *self._tag_modifications(tags),
             ]
@@ -168,6 +172,7 @@ class TaskwarriorClient:
         wait: str = "",
         scheduled: str = "",
         depends: str = "",
+        estimate: str = "",
     ) -> str:
         """Replace the editable fields of a task."""
         return self._run(
@@ -182,6 +187,7 @@ class TaskwarriorClient:
                     wait=wait,
                     scheduled=scheduled,
                     depends=depends,
+                    estimate=estimate,
                     include_empty=True,
                 ),
                 *self._tag_modifications(tags, previous_tags),
