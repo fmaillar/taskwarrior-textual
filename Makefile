@@ -7,15 +7,17 @@ PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 RUFF := $(VENV)/bin/ruff
 COVERAGE := $(VENV)/bin/coverage
+INSTALL_STAMP := $(VENV)/.taskwarrior-textual-installed
 
 REPORT_DIR := reports
 
-.PHONY: help venv install test coverage report lint check push-reports clean
+.PHONY: help venv install reinstall test coverage report lint check push-reports clean
 
 help:
 	@printf '%s\n' \
 	  'make venv          Create the virtual environment' \
-	  'make install       Install project + development dependencies' \
+	  'make install       Install only when pyproject.toml changed' \
+	  'make reinstall     Force reinstall project + development dependencies' \
 	  'make test          Run pytest with the configured coverage gate' \
 	  'make coverage      Run tests and generate coverage reports' \
 	  'make report        Generate compact reports and keep pytest exit status' \
@@ -27,8 +29,15 @@ help:
 venv:
 	@test -x "$(VENV)/bin/python" || $(PYTHON) -m venv "$(VENV)"
 
-install: venv
+install: $(INSTALL_STAMP)
+
+$(INSTALL_STAMP): pyproject.toml | venv
 	$(PIP) install -e '.[dev]'
+	@touch "$(INSTALL_STAMP)"
+
+reinstall: venv
+	@rm -f "$(INSTALL_STAMP)"
+	$(MAKE) --no-print-directory install
 
 test: install
 	$(PYTEST)
