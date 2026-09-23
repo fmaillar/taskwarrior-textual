@@ -18,6 +18,20 @@ task
 TaskChampion
 ```
 
+## Documentation
+
+The README is the short project overview. Full documentation lives in
+[`docs/`](docs/README.md):
+
+- [Tutorial](docs/tutorial.md) — installation, configuration, interface basics,
+  and a complete first planning workflow.
+- [Use cases](docs/use-cases.md) — practical workflows for daily triage, project
+  planning, dependencies, auto-scheduling, Timewarrior, and diagnostics.
+- [Maintainer guide](docs/maintainer-guide.md) — architecture, invariants,
+  extension patterns, tests, quality gates, and release/maintenance procedures.
+
+The in-application key reference is always available with `?`.
+
 ## Current MVP
 
 - discover the `task` executable from `PATH`
