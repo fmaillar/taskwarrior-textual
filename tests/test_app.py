@@ -338,6 +338,23 @@ def test_dependency_overview_builds_topological_layers() -> None:
     assert "Cycle detected" not in summary
 
 
+def test_dependency_overview_breaks_short_uuid_ties_with_full_uuid() -> None:
+    first = Task(
+        uuid="aaaaaaaa-0000-0000-0000-000000000001",
+        description="First collision",
+        status="pending",
+    )
+    second = Task(
+        uuid="aaaaaaaa-0000-0000-0000-000000000002",
+        description="Second collision",
+        status="pending",
+    )
+
+    summary = TaskwarriorApp._dependency_overview([second, first])
+
+    assert "Layer 0: aaaaaaaa First collision; aaaaaaaa Second collision" in summary
+
+
 def test_dependency_overview_reports_unresolved_dependencies() -> None:
     task = Task(
         uuid="aaaaaaaa-1111-2222-3333-444444444444",
