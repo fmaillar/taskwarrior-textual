@@ -22,6 +22,7 @@ VIEW_FILTERS = {
     "waiting": "status:waiting",
     "completed": "status:completed",
     "deleted": "status:deleted",
+    "scheduled": "+SCHEDULED",
 }
 
 
