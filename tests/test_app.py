@@ -3159,9 +3159,17 @@ async def test_view_change_refetches_then_reapplies_search_and_sort() -> None:
         assert ("view", "waiting") in client.calls
 
 
-def test_run_launches_application(monkeypatch) -> None:
+def test_run_launches_application_with_loaded_planning_settings(monkeypatch) -> None:
     launched = []
+    settings = PlanningSettings(timezone="UTC", capacity=2)
+    monkeypatch.setattr(app_module, "load_planning_settings", lambda: settings)
     monkeypatch.setattr(app_module, "TaskwarriorClient", lambda: FakeUiClient())
-    monkeypatch.setattr(TaskwarriorApp, "run", lambda self: launched.append(True))
+    monkeypatch.setattr(
+        TaskwarriorApp,
+        "run",
+        lambda self: launched.append(self.planning_settings),
+    )
+
     app_module.run()
-    assert launched == [True]
+
+    assert launched == [settings]
