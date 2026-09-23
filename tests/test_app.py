@@ -1481,6 +1481,18 @@ def test_timewarrior_trend_supports_30_day_current_week_and_current_month() -> N
     assert "Tracked in window: 6.00h" in current_month
 
 
+def test_timewarrior_trend_current_month_handles_december_year_boundary() -> None:
+    summary = TaskwarriorApp._timewarrior_trend(
+        [],
+        (),
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 12, 15, 12, 0, tzinfo=UTC),
+        period="month",
+    )
+
+    assert "Current month 2026-12-01 through 2026-12-31 (UTC)" in summary
+
+
 @pytest.mark.parametrize("period", ["", "14d", "quarter"])
 def test_timewarrior_trend_rejects_unknown_period(period: str) -> None:
     with pytest.raises(ValueError, match="period"):
