@@ -169,6 +169,65 @@ def test_build_planning_graph_handles_empty_input() -> None:
     assert graph.cyclic is False
 
 
+def test_remaining_estimate_prefers_timewarrior_hours_over_start_age() -> None:
+    task = Task(
+        uuid="10101010-1111-2222-3333-444444444444",
+        description="Tracked",
+        status="pending",
+        start="20260923T080000Z",
+        estimate_hours=5.0,
+    )
+    now = datetime(2026, 9, 23, 12, 0, tzinfo=UTC)
+
+    schedule = build_relative_schedule(
+        build_planning_graph([task]),
+        PlanningSettings(timezone="UTC"),
+        now=now,
+        tracked_hours={task.uuid: 1.5},
+    )
+
+    assert schedule is not None
+    assert schedule.duration == 3.5
+    assert schedule.earliest_finish[task.uuid] == 3.5
+
+
+def test_timewarrior_hours_reduce_inactive_pending_task_remaining_work() -> None:
+    task = Task(
+        uuid="20202020-1111-2222-3333-444444444444",
+        description="Stopped but partially done",
+        status="pending",
+        estimate_hours=5.0,
+    )
+
+    schedule = build_relative_schedule(
+        build_planning_graph([task]),
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
+        tracked_hours={task.uuid: 2.0},
+    )
+
+    assert schedule is not None
+    assert schedule.duration == 3.0
+
+
+def test_timewarrior_hours_are_clamped_to_estimate() -> None:
+    task = Task(
+        uuid="30303030-1111-2222-3333-444444444444",
+        description="Overtracked",
+        status="pending",
+        estimate_hours=1.0,
+    )
+
+    schedule = build_relative_schedule(
+        build_planning_graph([task]),
+        PlanningSettings(timezone="UTC"),
+        tracked_hours={task.uuid: 3.0},
+    )
+
+    assert schedule is not None
+    assert schedule.duration == 0.0
+
+
 def test_remaining_estimate_uses_completed_zero_and_active_elapsed_work() -> None:
     completed = Task(
         uuid="aaaaaaaa-1111-2222-3333-444444444444",
@@ -359,6 +418,29 @@ def test_parse_taskwarrior_datetime_accepts_utc_and_rejects_unknown() -> None:
     parsed = parse_taskwarrior_datetime("20260924T090000Z")
     assert parsed is not None
     assert parsed.strftime("%Y-%m-%d %H:%M") == "2026-09-24 09:00"
+
+
+def test_build_absolute_schedule_uses_timewarrior_remaining_work() -> None:
+    task = Task(
+        uuid="40404040-1111-2222-3333-444444444444",
+        description="Tracked active",
+        status="pending",
+        scheduled="20260923T080000Z",
+        start="20260923T080000Z",
+        estimate_hours=4.0,
+    )
+    now = datetime(2026, 9, 23, 10, 0, tzinfo=UTC)
+
+    schedule = build_absolute_schedule(
+        build_planning_graph([task]),
+        PlanningSettings(timezone="UTC"),
+        now=now,
+        tracked_hours={task.uuid: 0.5},
+    )
+
+    assert schedule is not None
+    assert schedule.starts[task.uuid] == now
+    assert schedule.finishes[task.uuid] == datetime(2026, 9, 23, 14, 30, tzinfo=UTC)
 
 
 def test_build_absolute_schedule_active_task_anchors_at_now_and_uses_remaining_work() -> None:
