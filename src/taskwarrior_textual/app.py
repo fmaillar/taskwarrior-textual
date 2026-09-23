@@ -219,6 +219,37 @@ class ProjectFilterForm(ModalScreen[str]):
         self.dismiss("")
 
 
+class DependencyOverviewScreen(ModalScreen[None]):
+    """Read-only dependency graph overview for the current view."""
+
+    BINDINGS = [("escape", "close", "Close")]
+
+    CSS = """
+    DependencyOverviewScreen { align: center middle; }
+    #dependency-overview-box {
+        width: 85%;
+        max-width: 110;
+        height: auto;
+        max-height: 85%;
+        padding: 1 2;
+        border: round $accent;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, body: str) -> None:
+        super().__init__()
+        self.body = body
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dependency-overview-box"):
+            yield Label("Dependency graph overview")
+            yield Static(self.body, id="dependency-overview-body")
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 class DependencyScreen(ModalScreen[None]):
     """Read-only local dependency neighborhood for one task."""
 
@@ -340,6 +371,7 @@ class TaskwarriorApp(App[None]):
         ("p", "filter_project", "Project"),
         ("b", "toggle_blocked", "Blocked"),
         ("g", "show_dependencies", "Dependencies"),
+        ("shift+g", "show_dependency_overview", "Dependency graph"),
         ("shift+p", "show_project_overview", "Projects"),
         ("f", "filter_tag", "Tag"),
         ("v", "toggle_active", "Active"),
@@ -563,6 +595,94 @@ class TaskwarriorApp(App[None]):
         return "\n\n".join(sections)
 
     @staticmethod
+    def _dependency_overview(tasks: list[Task]) -> str:
+        """Summarize the resolved dependency graph for the current view."""
+        if not tasks:
+            return "No tasks in current view."
+
+        by_uuid = {task.uuid: task for task in tasks}
+        dependencies: dict[str, set[str]] = {}
+        dependents: dict[str, set[str]] = {task.uuid: set() for task in tasks}
+        unresolved: list[tuple[str, str]] = []
+
+        for task in tasks:
+            resolved: set[str] = set()
+            for dependency in task.depends:
+                if dependency in by_uuid:
+                    resolved.add(dependency)
+                    dependents[dependency].add(task.uuid)
+                else:
+                    unresolved.append((task.short_uuid, dependency[:8]))
+            dependencies[task.uuid] = resolved
+
+        remaining = set(by_uuid)
+        layers: list[list[str]] = []
+        while remaining:
+            ready = sorted(
+                (
+                    uuid
+                    for uuid in remaining
+                    if not (dependencies[uuid] & remaining)
+                ),
+                key=lambda uuid: by_uuid[uuid].short_uuid,
+            )
+            if not ready:
+                break
+            layers.append(ready)
+            remaining.difference_update(ready)
+
+        cycle_nodes = set(remaining)
+        while cycle_nodes:
+            leaves = {
+                uuid
+                for uuid in cycle_nodes
+                if not (dependents[uuid] & cycle_nodes)
+            }
+            if not leaves:
+                break
+            cycle_nodes.difference_update(leaves)
+
+        blocked_by_cycle = remaining - cycle_nodes
+        resolved_edges = sum(len(values) for values in dependencies.values())
+        lines = [
+            f"Tasks: {len(tasks)} | Resolved edges: {resolved_edges} | "
+            f"Unresolved: {len(unresolved)}"
+        ]
+
+        for index, layer in enumerate(layers):
+            rendered = "; ".join(
+                f"{by_uuid[uuid].short_uuid} {by_uuid[uuid].description}"
+                for uuid in layer
+            )
+            lines.append(f"Layer {index}: {rendered}")
+
+        if cycle_nodes:
+            rendered = "; ".join(
+                f"{by_uuid[uuid].short_uuid} {by_uuid[uuid].description}"
+                for uuid in sorted(cycle_nodes, key=lambda item: by_uuid[item].short_uuid)
+            )
+            lines.append(f"Cycle detected among: {rendered}")
+
+        if blocked_by_cycle:
+            rendered = "; ".join(
+                f"{by_uuid[uuid].short_uuid} {by_uuid[uuid].description}"
+                for uuid in sorted(
+                    blocked_by_cycle,
+                    key=lambda item: by_uuid[item].short_uuid,
+                )
+            )
+            lines.append(f"Blocked by cycle: {rendered}")
+
+        if unresolved:
+            lines.append("Unresolved dependencies")
+            lines.extend(
+                f"{task_uuid} -> {dependency_uuid}"
+                for task_uuid, dependency_uuid in sorted(unresolved)
+            )
+
+        return "\n".join(lines)
+
+    @staticmethod
     def _project_overview(tasks: list[Task]) -> str:
         """Summarize task counts and urgency by project for the current view."""
         if not tasks:
@@ -700,6 +820,12 @@ class TaskwarriorApp(App[None]):
                 f"Dependencies for {task.short_uuid}",
                 self._dependency_summary(task, self.view_tasks),
             )
+        )
+
+    def action_show_dependency_overview(self) -> None:
+        """Show the local dependency graph structure for the current view."""
+        self.push_screen(
+            DependencyOverviewScreen(self._dependency_overview(self.view_tasks))
         )
 
     def action_show_project_overview(self) -> None:
