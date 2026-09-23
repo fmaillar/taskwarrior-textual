@@ -1548,8 +1548,9 @@ async def test_project_overview_key_opens_local_screen_without_refetch() -> None
 
         assert isinstance(app.screen, ProjectOverviewScreen)
         body = str(app.screen.query_one("#project-overview-body").render())
-        assert "Docs | 1 | 0 | 0 | 0.00h | 1 | 4.00" in body
-        assert "Infra | 1 | 0 | 1 | 0.00h | 1 | 12.00" in body
+        assert "Docs | 1 | 0 | 0 | 0.00h | 0.00h | 0.00h | 1 | 4.00" in body
+        assert "Infra | 1 | 0 | 1 | 0.00h | 0.00h | 0.00h | 1 | 12.00" in body
+        assert ("timewarrior_hours", 3) in client.calls
         assert client.calls.count(("view", "pending")) == initial_view_calls
 
         await pilot.press("escape")
