@@ -10,6 +10,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
 
 from .models import Task
+from .planning import build_planning_graph
 from .taskwarrior import TaskwarriorClient, TaskwarriorError
 
 
@@ -794,36 +795,14 @@ class TaskwarriorApp(App[None]):
         if not tasks:
             return "No tasks in current view."
 
-        by_uuid = {task.uuid: task for task in tasks}
-        dependencies: dict[str, set[str]] = {}
-        successors: dict[str, set[str]] = {task.uuid: set() for task in tasks}
-        unresolved: list[tuple[str, str]] = []
-
-        for task in tasks:
-            resolved: set[str] = set()
-            for dependency in task.depends:
-                if dependency in by_uuid:
-                    resolved.add(dependency)
-                    successors[dependency].add(task.uuid)
-                else:
-                    unresolved.append((task.short_uuid, dependency[:8]))
-            dependencies[task.uuid] = resolved
-
-        remaining = set(by_uuid)
-        order: list[str] = []
-        while remaining:
-            ready = sorted(
-                (
-                    uuid
-                    for uuid in remaining
-                    if not (dependencies[uuid] & remaining)
-                ),
-                key=lambda uuid: by_uuid[uuid].short_uuid,
-            )
-            if not ready:
-                return "Critical path unavailable: dependency cycle detected."
-            order.extend(ready)
-            remaining.difference_update(ready)
+        graph = build_planning_graph(tasks)
+        if graph.cyclic:
+            return "Critical path unavailable: dependency cycle detected."
+        by_uuid = graph.by_uuid
+        dependencies = graph.dependencies
+        successors = graph.successors
+        unresolved = graph.unresolved
+        order = list(graph.order)
 
         earliest_start: dict[str, float] = {}
         earliest_finish: dict[str, float] = {}
@@ -918,36 +897,14 @@ class TaskwarriorApp(App[None]):
         if not tasks:
             return "No tasks in current view."
 
-        by_uuid = {task.uuid: task for task in tasks}
-        dependencies: dict[str, set[str]] = {}
-        successors: dict[str, set[str]] = {task.uuid: set() for task in tasks}
-        unresolved: list[tuple[str, str]] = []
-
-        for task in tasks:
-            resolved: set[str] = set()
-            for dependency in task.depends:
-                if dependency in by_uuid:
-                    resolved.add(dependency)
-                    successors[dependency].add(task.uuid)
-                else:
-                    unresolved.append((task.short_uuid, dependency[:8]))
-            dependencies[task.uuid] = resolved
-
-        remaining = set(by_uuid)
-        order: list[str] = []
-        while remaining:
-            ready = sorted(
-                (
-                    uuid
-                    for uuid in remaining
-                    if not (dependencies[uuid] & remaining)
-                ),
-                key=lambda uuid: by_uuid[uuid].short_uuid,
-            )
-            if not ready:
-                return "Gantt unavailable: dependency cycle detected."
-            order.extend(ready)
-            remaining.difference_update(ready)
+        graph = build_planning_graph(tasks)
+        if graph.cyclic:
+            return "Gantt unavailable: dependency cycle detected."
+        by_uuid = graph.by_uuid
+        dependencies = graph.dependencies
+        successors = graph.successors
+        unresolved = graph.unresolved
+        order = list(graph.order)
 
         earliest_start: dict[str, float] = {}
         earliest_finish: dict[str, float] = {}
@@ -1037,33 +994,13 @@ class TaskwarriorApp(App[None]):
             return "Calendar plan unavailable: no valid scheduled date in current view."
         origin = min(anchors)
 
-        by_uuid = {task.uuid: task for task in tasks}
-        dependencies: dict[str, set[str]] = {}
-        unresolved: list[tuple[str, str]] = []
-        for task in tasks:
-            resolved: set[str] = set()
-            for dependency in task.depends:
-                if dependency in by_uuid:
-                    resolved.add(dependency)
-                else:
-                    unresolved.append((task.short_uuid, dependency[:8]))
-            dependencies[task.uuid] = resolved
-
-        remaining = set(by_uuid)
-        order: list[str] = []
-        while remaining:
-            ready = sorted(
-                (
-                    uuid
-                    for uuid in remaining
-                    if not (dependencies[uuid] & remaining)
-                ),
-                key=lambda uuid: by_uuid[uuid].short_uuid,
-            )
-            if not ready:
-                return "Calendar plan unavailable: dependency cycle detected."
-            order.extend(ready)
-            remaining.difference_update(ready)
+        graph = build_planning_graph(tasks)
+        if graph.cyclic:
+            return "Calendar plan unavailable: dependency cycle detected."
+        by_uuid = graph.by_uuid
+        dependencies = graph.dependencies
+        unresolved = graph.unresolved
+        order = list(graph.order)
 
         starts: dict[str, datetime] = {}
         finishes: dict[str, datetime] = {}
