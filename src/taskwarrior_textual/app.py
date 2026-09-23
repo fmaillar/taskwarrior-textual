@@ -1139,7 +1139,11 @@ class TaskwarriorApp(App[None]):
         return "\n".join(lines)
 
     @classmethod
-    def _constraints_summary(cls, tasks: list[Task]) -> str:
+    def _constraints_summary(
+        cls,
+        tasks: list[Task],
+        settings: PlanningSettings | None = None,
+    ) -> str:
         """Summarize scheduled and due constraints in the current view."""
         if not tasks:
             return "No tasks in current view."
@@ -1149,7 +1153,7 @@ class TaskwarriorApp(App[None]):
             return "No scheduled or due constraints in current view."
 
         graph = build_planning_graph(tasks)
-        schedule = None if graph.cyclic else build_absolute_schedule(graph)
+        schedule = None if graph.cyclic else build_absolute_schedule(graph, settings)
         scheduled_count = sum(bool(task.scheduled) for task in constrained)
         due_count = sum(bool(task.due) for task in constrained)
 
@@ -1373,7 +1377,11 @@ class TaskwarriorApp(App[None]):
 
     def action_show_constraints(self) -> None:
         """Show scheduled and due constraints for the current view."""
-        self.push_screen(ConstraintsScreen(self._constraints_summary(self.view_tasks)))
+        self.push_screen(
+            ConstraintsScreen(
+                self._constraints_summary(self.view_tasks, self.planning_settings)
+            )
+        )
 
     def action_show_milestones(self) -> None:
         """Show explicit zero-duration milestones for the current view."""
