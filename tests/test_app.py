@@ -382,6 +382,45 @@ def test_dependency_overview_detects_cycles() -> None:
     assert "Layer 0:" not in summary
 
 
+def test_dependency_overview_does_not_misclassify_bridge_between_cycles() -> None:
+    a = Task(
+        uuid="aaaaaaaa-1111-1111-1111-111111111111",
+        description="A",
+        status="pending",
+        depends=("bbbbbbbb-1111-1111-1111-111111111111",),
+    )
+    b = Task(
+        uuid="bbbbbbbb-1111-1111-1111-111111111111",
+        description="B",
+        status="pending",
+        depends=(a.uuid,),
+    )
+    bridge = Task(
+        uuid="cccccccc-1111-1111-1111-111111111111",
+        description="Bridge",
+        status="pending",
+        depends=(a.uuid,),
+    )
+    c = Task(
+        uuid="dddddddd-1111-1111-1111-111111111111",
+        description="C",
+        status="pending",
+        depends=("eeeeeeee-1111-1111-1111-111111111111", bridge.uuid),
+    )
+    d = Task(
+        uuid="eeeeeeee-1111-1111-1111-111111111111",
+        description="D",
+        status="pending",
+        depends=(c.uuid,),
+    )
+
+    summary = TaskwarriorApp._dependency_overview([d, bridge, b, c, a])
+
+    assert "Cycle detected among: aaaaaaaa A; bbbbbbbb B; dddddddd C; eeeeeeee D" in summary
+    assert "Blocked by cycle: cccccccc Bridge" in summary
+    assert "cccccccc Bridge" not in summary.split("Cycle detected among:", 1)[1].split("\n", 1)[0]
+
+
 def test_dependency_overview_handles_empty_view() -> None:
     assert TaskwarriorApp._dependency_overview([]) == "No tasks in current view."
 
