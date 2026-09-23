@@ -1475,9 +1475,14 @@ def test_project_overview_counts_active_tasks() -> None:
         urgency=3.5,
     )
 
-    summary = TaskwarriorApp._project_overview([*SEARCH_TASKS, active])
+    summary = TaskwarriorApp._project_overview(
+        [*SEARCH_TASKS, active],
+        PlanningSettings(timezone="UTC"),
+        now=datetime(2026, 9, 23, 8, 0, tzinfo=UTC),
+        tracked_hours={},
+    )
 
-    assert "Infra | 2 | 1 | 1 | 0.00h | 2 | 15.50" in summary
+    assert "Infra | 2 | 1 | 1 | 0.00h | 0.00h | 0.00h | 2 | 15.50" in summary
 
 
 def test_project_overview_sums_estimates_and_counts_missing() -> None:
