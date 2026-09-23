@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
 
 from .models import Task
-from .planning import build_planning_graph, build_relative_schedule
+from .planning import (
+    build_absolute_schedule,
+    build_planning_graph,
+    build_relative_schedule,
+    parse_taskwarrior_datetime,
+)
 from .taskwarrior import TaskwarriorClient, TaskwarriorError
 
 
@@ -930,14 +933,9 @@ class TaskwarriorApp(App[None]):
         return "\n".join(lines)
 
     @staticmethod
-    def _planning_datetime(value: str) -> datetime | None:
+    def _planning_datetime(value: str):
         """Parse a Taskwarrior UTC timestamp for local planning calculations."""
-        if not value:
-            return None
-        try:
-            return datetime.strptime(value, "%Y%m%dT%H%M%SZ")
-        except ValueError:
-            return None
+        return parse_taskwarrior_datetime(value)
 
     @classmethod
     def _calendar_plan(cls, tasks: list[Task]) -> str:
@@ -945,53 +943,25 @@ class TaskwarriorApp(App[None]):
         if not tasks:
             return "No tasks in current view."
 
-        scheduled = {
-            task.uuid: cls._planning_datetime(task.scheduled)
-            for task in tasks
-        }
-        anchors = [value for value in scheduled.values() if value is not None]
-        if not anchors:
-            return "Calendar plan unavailable: no valid scheduled date in current view."
-        origin = min(anchors)
-
         graph = build_planning_graph(tasks)
         if graph.cyclic:
             return "Calendar plan unavailable: dependency cycle detected."
+
+        schedule = build_absolute_schedule(graph)
+        if schedule is None:
+            return "Calendar plan unavailable: no valid scheduled date in current view."
+
         by_uuid = graph.by_uuid
-        dependencies = graph.dependencies
         unresolved = graph.unresolved
         order = list(graph.order)
-
-        starts: dict[str, datetime] = {}
-        finishes: dict[str, datetime] = {}
-        late_by: dict[str, float] = {}
-        invalid_due: list[str] = []
-
-        for uuid in order:
-            candidates = [origin]
-            explicit_start = scheduled[uuid]
-            if explicit_start is not None:
-                candidates.append(explicit_start)
-            candidates.extend(finishes[dependency] for dependency in dependencies[uuid])
-            start = max(candidates)
-            finish = start + timedelta(hours=by_uuid[uuid].estimate_hours)
-            starts[uuid] = start
-            finishes[uuid] = finish
-
-            raw_due = by_uuid[uuid].due
-            due = cls._planning_datetime(raw_due)
-            if raw_due and due is None:
-                invalid_due.append(by_uuid[uuid].short_uuid)
-            if due is not None:
-                deadline = due
-                if due.hour == 0 and due.minute == 0 and due.second == 0:
-                    deadline += timedelta(days=1)
-                if finish > deadline:
-                    late_by[uuid] = (finish - deadline).total_seconds() / 3600
-
+        starts = schedule.starts
+        finishes = schedule.finishes
+        late_by = schedule.late_by
+        invalid_due = schedule.invalid_due
         project_finish = max(finishes.values())
+
         lines = [
-            f"Calendar origin: {origin:%Y-%m-%d %H:%M} UTC | "
+            f"Calendar origin: {schedule.origin:%Y-%m-%d %H:%M} UTC | "
             f"Project finish: {project_finish:%Y-%m-%d %H:%M} UTC",
             f"Late tasks: {len(late_by)}",
             "",
@@ -1028,12 +998,12 @@ class TaskwarriorApp(App[None]):
         if unresolved:
             rendered = "; ".join(
                 f"{task_uuid} -> {dependency_uuid}"
-                for task_uuid, dependency_uuid in sorted(unresolved)
+                for task_uuid, dependency_uuid in unresolved
             )
             lines.extend(["", "Unresolved dependencies ignored: " + rendered])
 
         if invalid_due:
-            lines.extend(["", "Invalid due dates ignored: " + ", ".join(sorted(invalid_due))])
+            lines.extend(["", "Invalid due dates ignored: " + ", ".join(invalid_due)])
 
         return "\n".join(lines)
 
