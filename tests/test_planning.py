@@ -234,6 +234,8 @@ def test_build_absolute_schedule_applies_dependencies_scheduled_and_due() -> Non
     assert schedule.finishes[delayed.uuid].strftime("%H:%M") == "18:00"
     assert schedule.late_by[delayed.uuid] == 2.0
     assert first.uuid not in schedule.late_by
+    assert schedule.due_slack[first.uuid] == 13.0
+    assert schedule.due_slack[delayed.uuid] == -2.0
     assert schedule.invalid_due == ()
 
 
@@ -267,6 +269,7 @@ def test_build_absolute_schedule_tracks_invalid_due_and_no_anchor() -> None:
     assert schedule is not None
     assert schedule.invalid_due == ("cccccccc",)
     assert schedule.late_by == {}
+    assert schedule.due_slack == {}
 
 
 def test_build_absolute_schedule_returns_none_for_cycles() -> None:
