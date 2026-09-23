@@ -204,7 +204,7 @@ def parse_taskwarrior_datetime(value: str) -> datetime | None:
     if not value:
         return None
     try:
-        return datetime.strptime(value, "%Y%m%dT%H%M%SZ")
+        return datetime.strptime(value, "%Y%m%dT%H%M%S%z")
     except ValueError:
         return None
 
