@@ -219,6 +219,37 @@ class ProjectFilterForm(ModalScreen[str]):
         self.dismiss("")
 
 
+class CriticalPathScreen(ModalScreen[None]):
+    """Read-only critical-path analysis for the current view."""
+
+    BINDINGS = [("escape", "close", "Close")]
+
+    CSS = """
+    CriticalPathScreen { align: center middle; }
+    #critical-path-box {
+        width: 90%;
+        max-width: 120;
+        height: auto;
+        max-height: 90%;
+        padding: 1 2;
+        border: round $accent;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, body: str) -> None:
+        super().__init__()
+        self.body = body
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="critical-path-box"):
+            yield Label("Critical path")
+            yield Static(self.body, id="critical-path-body")
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 class DependencyOverviewScreen(ModalScreen[None]):
     """Read-only dependency graph overview for the current view."""
 
@@ -372,6 +403,7 @@ class TaskwarriorApp(App[None]):
         ("b", "toggle_blocked", "Blocked"),
         ("g", "show_dependencies", "Dependencies"),
         ("shift+g", "show_dependency_overview", "Dependency graph"),
+        ("shift+c", "show_critical_path", "Critical path"),
         ("shift+p", "show_project_overview", "Projects"),
         ("f", "filter_tag", "Tag"),
         ("v", "toggle_active", "Active"),
@@ -683,6 +715,132 @@ class TaskwarriorApp(App[None]):
         return "\n".join(lines)
 
     @staticmethod
+    def _critical_path_summary(tasks: list[Task]) -> str:
+        """Compute a CPM schedule from resolved dependencies and estimates."""
+        if not tasks:
+            return "No tasks in current view."
+
+        by_uuid = {task.uuid: task for task in tasks}
+        dependencies: dict[str, set[str]] = {}
+        successors: dict[str, set[str]] = {task.uuid: set() for task in tasks}
+        unresolved: list[tuple[str, str]] = []
+
+        for task in tasks:
+            resolved: set[str] = set()
+            for dependency in task.depends:
+                if dependency in by_uuid:
+                    resolved.add(dependency)
+                    successors[dependency].add(task.uuid)
+                else:
+                    unresolved.append((task.short_uuid, dependency[:8]))
+            dependencies[task.uuid] = resolved
+
+        remaining = set(by_uuid)
+        order: list[str] = []
+        while remaining:
+            ready = sorted(
+                (
+                    uuid
+                    for uuid in remaining
+                    if not (dependencies[uuid] & remaining)
+                ),
+                key=lambda uuid: by_uuid[uuid].short_uuid,
+            )
+            if not ready:
+                return "Critical path unavailable: dependency cycle detected."
+            order.extend(ready)
+            remaining.difference_update(ready)
+
+        earliest_start: dict[str, float] = {}
+        earliest_finish: dict[str, float] = {}
+        for uuid in order:
+            start = max(
+                (earliest_finish[dependency] for dependency in dependencies[uuid]),
+                default=0.0,
+            )
+            earliest_start[uuid] = start
+            earliest_finish[uuid] = start + by_uuid[uuid].estimate_hours
+
+        project_duration = max(earliest_finish.values(), default=0.0)
+        latest_start: dict[str, float] = {}
+        latest_finish: dict[str, float] = {}
+        for uuid in reversed(order):
+            if successors[uuid]:
+                finish = min(latest_start[successor] for successor in successors[uuid])
+            else:
+                finish = project_duration
+            latest_finish[uuid] = finish
+            latest_start[uuid] = finish - by_uuid[uuid].estimate_hours
+
+        slack = {
+            uuid: latest_start[uuid] - earliest_start[uuid]
+            for uuid in order
+        }
+        critical = {
+            uuid for uuid in order if abs(slack[uuid]) < 1e-9
+        }
+
+        terminal = min(
+            (
+                uuid
+                for uuid in order
+                if abs(earliest_finish[uuid] - project_duration) < 1e-9
+            ),
+            key=lambda uuid: by_uuid[uuid].short_uuid,
+        )
+        path = [terminal]
+        current = terminal
+        while dependencies[current]:
+            candidates = sorted(
+                (
+                    dependency
+                    for dependency in dependencies[current]
+                    if dependency in critical
+                    and abs(
+                        earliest_finish[dependency] - earliest_start[current]
+                    ) < 1e-9
+                ),
+                key=lambda uuid: by_uuid[uuid].short_uuid,
+            )
+            if not candidates:
+                break
+            current = candidates[0]
+            path.append(current)
+        path.reverse()
+
+        lines = [
+            f"Project duration: {project_duration:.2f}h",
+            "Critical path: "
+            + " -> ".join(by_uuid[uuid].short_uuid for uuid in path),
+            "",
+            "UUID | Estimate | ES | EF | Slack | Critical",
+        ]
+        for uuid in sorted(order, key=lambda item: by_uuid[item].short_uuid):
+            task = by_uuid[uuid]
+            lines.append(
+                f"{task.short_uuid} | {task.display_estimate or '0.00h'} | "
+                f"{earliest_start[uuid]:.2f} | {earliest_finish[uuid]:.2f} | "
+                f"{slack[uuid]:.2f} | {'yes' if uuid in critical else 'no'}"
+            )
+
+        unestimated = sorted(
+            task.short_uuid for task in tasks if task.estimate_hours == 0
+        )
+        if unestimated:
+            lines.extend(
+                ["", "Unestimated tasks treated as 0h: " + ", ".join(unestimated)]
+            )
+
+        if unresolved:
+            rendered = "; ".join(
+                f"{task_uuid} -> {dependency_uuid}"
+                for task_uuid, dependency_uuid in sorted(unresolved)
+            )
+            lines.extend(["", "Unresolved dependencies ignored: " + rendered])
+
+        return "\n".join(lines)
+
+    @staticmethod
     def _project_overview(tasks: list[Task]) -> str:
         """Summarize task counts and urgency by project for the current view."""
         if not tasks:
@@ -827,6 +985,10 @@ class TaskwarriorApp(App[None]):
         self.push_screen(
             DependencyOverviewScreen(self._dependency_overview(self.view_tasks))
         )
+
+    def action_show_critical_path(self) -> None:
+        """Show estimate-based critical-path analysis for the current view."""
+        self.push_screen(CriticalPathScreen(self._critical_path_summary(self.view_tasks)))
 
     def action_show_project_overview(self) -> None:
         """Show a local project summary for the currently loaded view."""
