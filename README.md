@@ -24,8 +24,28 @@ TaskChampion
 - override it with `TASKWARRIOR_COMMAND`
 - read pending tasks using `task status:pending export`
 - display tasks in a Textual `DataTable`
-- refresh with `r`
-- inspect the selected task with `Enter`
+- human-readable due dates
+- inspect a task with `Enter`
+- add and edit tasks with Textual forms
+- start/stop tasks (and therefore Timewarrior when the hook is installed)
+- mark tasks done
+- delete tasks with confirmation
+- synchronize with `task sync`
+
+### Key bindings
+
+```text
+Enter   inspect
+r       refresh
+a       add
+e       edit
+s       start
+x       stop
+d       done
+D       delete
+y       sync
+q       quit
+```
 
 ## Installation for development
 
@@ -35,6 +55,7 @@ cd taskwarrior-textual
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -e '.[dev]'
+pytest
 taskwarrior-textual
 ```
 
@@ -46,7 +67,7 @@ TASKWARRIOR_COMMAND=/usr/local/bin/task taskwarrior-textual
 
 ## Roadmap
 
-Next: task editing and lifecycle actions, project/dependency views, Timewarrior integration, reports, Gantt, duration/effort metadata, and critical-path analysis.
+Next: richer Taskwarrior fields and filters, dependency/project views, Timewarrior reports, Gantt, duration/effort metadata, and critical-path analysis.
 
 ## License
 
