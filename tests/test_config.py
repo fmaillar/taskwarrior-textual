@@ -158,3 +158,12 @@ def test_working_calendar_rejects_nonworking_date_deadline() -> None:
 
     with pytest.raises(ValueError, match="non-working"):
         calendar.deadline_for_date("2026-09-27")
+
+
+
+def test_planning_settings_requires_workdays_and_work_periods() -> None:
+    with pytest.raises(ValueError, match="workdays"):
+        PlanningSettings(workdays=())
+
+    with pytest.raises(ValueError, match="work periods"):
+        PlanningSettings(work_periods=())
