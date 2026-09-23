@@ -17,4 +17,4 @@ E   NameError: name 'pytest' is not defined
 =========================== short test summary info ============================
 ERROR tests/test_app.py - NameError: name 'pytest' is not defined
 !!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
-=============================== 1 error in 1.57s ===============================
+=============================== 1 error in 0.78s ===============================

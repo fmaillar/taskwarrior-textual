@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="1" time="1.574" timestamp="2026-09-23T14:19:58.405738+02:00" hostname="x260"><testcase classname="" name="tests.test_app" time="0.000"><error message="collection failure">tests/test_app.py:1598: in &lt;module&gt;
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="1" time="0.781" timestamp="2026-09-23T14:21:31.734219+02:00" hostname="x260"><testcase classname="" name="tests.test_app" time="0.000"><error message="collection failure">tests/test_app.py:1598: in &lt;module&gt;
     @pytest.mark.parametrize("sort_key", ["urgency", "when", "project", "priority"])
      ^^^^^^
 E   NameError: name 'pytest' is not defined</error></testcase></testsuite></testsuites>
