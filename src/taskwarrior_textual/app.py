@@ -231,6 +231,7 @@ class TaskwarriorApp(App[None]):
         ("2", "view_waiting", "Waiting"),
         ("3", "view_completed", "Completed"),
         ("4", "view_deleted", "Deleted"),
+        ("5", "view_scheduled", "Scheduled"),
         ("/", "search_tasks", "Search"),
         ("t", "cycle_sort", "Sort"),
         ("p", "filter_project", "Project"),
@@ -282,6 +283,8 @@ class TaskwarriorApp(App[None]):
         """Render one task as a table row for the selected view."""
         if view == "waiting":
             when = task.display_wait
+        elif view == "scheduled":
+            when = task.display_scheduled
         elif view in {"completed", "deleted"}:
             when = task.display_end
         else:
@@ -331,6 +334,8 @@ class TaskwarriorApp(App[None]):
             def when(task: Task) -> str:
                 if view == "waiting":
                     return task.display_wait
+                if view == "scheduled":
+                    return task.display_scheduled
                 if view in {"completed", "deleted"}:
                     return task.display_end
                 return task.display_due
@@ -450,6 +455,9 @@ class TaskwarriorApp(App[None]):
 
     def action_view_deleted(self) -> None:
         self._switch_view("deleted")
+
+    def action_view_scheduled(self) -> None:
+        self._switch_view("scheduled")
 
     def action_search_tasks(self) -> None:
         """Open local text search for the current view."""
