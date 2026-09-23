@@ -58,6 +58,7 @@ L       calendar plan
 K       scheduling constraints
 M       milestones
 P       project overview
+O       selected-project planning dashboard
 T       Timewarrior effort report
 R       Timewarrior trend (7/30 days, week, month)
 q       quit
@@ -113,6 +114,18 @@ the dependency candidates available from the expanded planning graph, resolves p
 to full UUIDs, and rejects self-dependencies, unknown or ambiguous prefixes, and edits
 that would introduce a dependency cycle.
 
+## Project dashboard
+
+Press `O` on a selected task to open a consolidated dashboard for that task's
+project (or the unprojected scope). The dashboard keeps the current Taskwarrior
+view as its project scope, recursively expands external dependencies according to
+`dependency_depth`, and reads Timewarrior once for the expanded graph.
+
+It reports project-only task/effort totals, external dependency count, graph
+health, unresolved edges, remaining critical-path duration, the critical path,
+calendar finish and late-task count when a valid calendar anchor exists, plus a
+per-task table that distinguishes project tasks from external prerequisites.
+
 ## Persistent planning configuration
 
 Planning defaults can be overridden in:
@@ -141,8 +154,8 @@ keys are rejected at startup instead of being silently ignored.
 
 ## Roadmap
 
-Next: persistent user configuration, consolidated project dashboards, richer planning
-editing/navigation, packaging, and a stable tagged release.
+Next: richer planning navigation/editing, packaging, release hardening, and a stable
+tagged release.
 
 ## License
 
