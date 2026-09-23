@@ -301,6 +301,7 @@ def build_absolute_schedule(
     *,
     now: datetime | None = None,
     tracked_hours: dict[str, float] | None = None,
+    origin: datetime | None = None,
 ) -> AbsoluteSchedule | None:
     """Build an absolute UTC schedule using the configured working calendar."""
     if graph.cyclic:
@@ -338,9 +339,11 @@ def build_absolute_schedule(
     ]
     if any(task.active for task in graph.by_uuid.values()):
         anchors.append(resolved_now)
+    if origin is not None:
+        anchors.append(calendar.next_working_time(origin))
     if not anchors:
         return None
-    origin = min(anchors)
+    resolved_origin = min(anchors)
 
     starts: dict[str, datetime] = {}
     finishes: dict[str, datetime] = {}
@@ -358,7 +361,7 @@ def build_absolute_schedule(
             continue
 
         task = graph.by_uuid[uuid]
-        candidates = [origin]
+        candidates = [resolved_origin]
         explicit_start = scheduled[uuid]
         if task.active:
             candidates.append(resolved_now)
@@ -411,7 +414,7 @@ def build_absolute_schedule(
 
     return AbsoluteSchedule(
         graph=graph,
-        origin=origin,
+        origin=resolved_origin,
         starts=starts,
         finishes=finishes,
         late_by=late_by,
