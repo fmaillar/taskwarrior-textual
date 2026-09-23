@@ -21,12 +21,12 @@ _______________ coverage: platform linux, python 3.13.5-final-0 ________________
 
 Name                                Stmts   Miss Branch BrPart  Cover   Missing
 -------------------------------------------------------------------------------
-src/taskwarrior_textual/config.py     115      1     44      1    99%   165
+src/taskwarrior_textual/config.py     114      0     44      1    99%   153->exit
 -------------------------------------------------------------------------------
-TOTAL                                1153      1    296      1    99%
+TOTAL                                1152      0    296      1    99%
 
 6 files skipped due to complete coverage.
 Coverage HTML written to dir htmlcov
 Coverage XML written to file reports/coverage.xml
-Required test coverage of 95.0% reached. Total coverage: 99.86%
-======================== 200 passed in 84.06s (0:01:24) ========================
+Required test coverage of 95.0% reached. Total coverage: 99.93%
+======================== 200 passed in 80.37s (0:01:20) ========================
