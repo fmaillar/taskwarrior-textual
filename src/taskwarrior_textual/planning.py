@@ -51,6 +51,7 @@ class AbsoluteSchedule:
     late_by: dict[str, float]
     due_slack: dict[str, float]
     invalid_due: tuple[str, ...]
+    invalid_scheduled: tuple[str, ...]
 
 
 def build_planning_graph(tasks: list[Task]) -> PlanningGraph:
@@ -216,6 +217,11 @@ def build_absolute_schedule(graph: PlanningGraph) -> AbsoluteSchedule | None:
         uuid: parse_taskwarrior_datetime(task.scheduled)
         for uuid, task in graph.by_uuid.items()
     }
+    invalid_scheduled = sorted(
+        task.short_uuid
+        for uuid, task in graph.by_uuid.items()
+        if task.scheduled and scheduled[uuid] is None
+    )
     anchors = [value for value in scheduled.values() if value is not None]
     if not anchors:
         return None
@@ -262,4 +268,5 @@ def build_absolute_schedule(graph: PlanningGraph) -> AbsoluteSchedule | None:
         late_by=late_by,
         due_slack=due_slack,
         invalid_due=tuple(sorted(invalid_due)),
+        invalid_scheduled=tuple(invalid_scheduled),
     )
