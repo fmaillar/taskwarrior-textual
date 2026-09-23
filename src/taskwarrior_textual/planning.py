@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from .models import Task
 
@@ -35,6 +36,18 @@ class RelativeSchedule:
     slack: dict[str, float]
     critical: frozenset[str]
     duration: float
+
+
+@dataclass(frozen=True, slots=True)
+class AbsoluteSchedule:
+    """Absolute UTC schedule honoring dependencies and scheduled constraints."""
+
+    graph: PlanningGraph
+    origin: datetime
+    starts: dict[str, datetime]
+    finishes: dict[str, datetime]
+    late_by: dict[str, float]
+    invalid_due: tuple[str, ...]
 
 
 def build_planning_graph(tasks: list[Task]) -> PlanningGraph:
@@ -133,4 +146,69 @@ def build_relative_schedule(graph: PlanningGraph) -> RelativeSchedule | None:
         slack=slack,
         critical=critical,
         duration=duration,
+    )
+
+
+
+def parse_taskwarrior_datetime(value: str) -> datetime | None:
+    """Parse a Taskwarrior UTC timestamp used by planning calculations."""
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y%m%dT%H%M%SZ")
+    except ValueError:
+        return None
+
+
+def build_absolute_schedule(graph: PlanningGraph) -> AbsoluteSchedule | None:
+    """Build an absolute UTC schedule from scheduled constraints and estimates."""
+    if graph.cyclic:
+        return None
+
+    scheduled = {
+        uuid: parse_taskwarrior_datetime(task.scheduled)
+        for uuid, task in graph.by_uuid.items()
+    }
+    anchors = [value for value in scheduled.values() if value is not None]
+    if not anchors:
+        return None
+    origin = min(anchors)
+
+    starts: dict[str, datetime] = {}
+    finishes: dict[str, datetime] = {}
+    late_by: dict[str, float] = {}
+    invalid_due: list[str] = []
+
+    for uuid in graph.order:
+        candidates = [origin]
+        explicit_start = scheduled[uuid]
+        if explicit_start is not None:
+            candidates.append(explicit_start)
+        candidates.extend(
+            finishes[dependency]
+            for dependency in graph.dependencies[uuid]
+        )
+        start = max(candidates)
+        finish = start + timedelta(hours=graph.by_uuid[uuid].estimate_hours)
+        starts[uuid] = start
+        finishes[uuid] = finish
+
+        raw_due = graph.by_uuid[uuid].due
+        due = parse_taskwarrior_datetime(raw_due)
+        if raw_due and due is None:
+            invalid_due.append(graph.by_uuid[uuid].short_uuid)
+        if due is not None:
+            deadline = due
+            if due.hour == 0 and due.minute == 0 and due.second == 0:
+                deadline += timedelta(days=1)
+            if finish > deadline:
+                late_by[uuid] = (finish - deadline).total_seconds() / 3600
+
+    return AbsoluteSchedule(
+        graph=graph,
+        origin=origin,
+        starts=starts,
+        finishes=finishes,
+        late_by=late_by,
+        invalid_due=tuple(sorted(invalid_due)),
     )
