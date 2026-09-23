@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from textual.widgets import Button, Input
 
+from taskwarrior_textual import app as app_module
 from taskwarrior_textual.app import ConfirmDelete, TaskForm, TaskwarriorApp
 from taskwarrior_textual.models import Task
 from taskwarrior_textual.taskwarrior import TaskwarriorError
@@ -18,9 +19,10 @@ TASK = Task(
 
 
 class FakeUiClient:
-    def __init__(self) -> None:
+    def __init__(self, tasks: list[Task] | None = None) -> None:
         self.calls: list[tuple[str, str]] = []
         self.fail: str | None = None
+        self.tasks = [TASK] if tasks is None else tasks
 
     def _maybe_fail(self, action: str) -> None:
         if self.fail == action:
@@ -28,7 +30,7 @@ class FakeUiClient:
 
     def pending(self) -> list[Task]:
         self._maybe_fail("pending")
-        return [TASK]
+        return self.tasks
 
     def information(self, uuid_prefix: str) -> str:
         self._maybe_fail("information")
@@ -90,6 +92,16 @@ async def test_app_mounts_and_displays_pending_task() -> None:
         assert app._selected_task() == TASK
 
 
+async def test_selected_task_is_none_with_empty_table() -> None:
+    app = TaskwarriorApp(client=FakeUiClient(tasks=[]))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app._selected_task() is None
+        app.action_start_task()
+        app.action_edit_task()
+        app.action_delete_task()
+
+
 async def test_edit_key_opens_prefilled_task_form() -> None:
     app = TaskwarriorApp(client=FakeUiClient())
     async with app.run_test() as pilot:
@@ -133,6 +145,21 @@ async def test_add_form_cancel_does_not_call_client() -> None:
     assert not client.calls
 
 
+async def test_add_error_is_rendered() -> None:
+    client = FakeUiClient()
+    client.fail = "add"
+    app = TaskwarriorApp(client=client)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("a")
+        await pilot.pause()
+        form = app.screen
+        form.query_one("#description", Input).value = "New task"
+        form.on_button_pressed(Button.Pressed(form.query_one("#save", Button)))
+        await pilot.pause()
+        assert "add failed" in str(app.query_one("#details").render())
+
+
 async def test_edit_form_save_calls_modify() -> None:
     client = FakeUiClient()
     app = TaskwarriorApp(client=client)
@@ -145,6 +172,34 @@ async def test_edit_form_save_calls_modify() -> None:
         form.on_button_pressed(Button.Pressed(form.query_one("#save", Button)))
         await pilot.pause()
     assert ("modify", TASK.short_uuid) in client.calls
+
+
+async def test_edit_form_cancel_does_not_modify() -> None:
+    client = FakeUiClient()
+    app = TaskwarriorApp(client=client)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+        form = app.screen
+        form.on_button_pressed(Button.Pressed(form.query_one("#cancel", Button)))
+        await pilot.pause()
+    assert ("modify", TASK.short_uuid) not in client.calls
+
+
+async def test_edit_error_is_rendered() -> None:
+    client = FakeUiClient()
+    client.fail = "modify"
+    app = TaskwarriorApp(client=client)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+        form = app.screen
+        form.query_one("#description", Input).value = "Changed"
+        form.on_button_pressed(Button.Pressed(form.query_one("#save", Button)))
+        await pilot.pause()
+        assert "modify failed" in str(app.query_one("#details").render())
 
 
 async def test_empty_description_does_not_close_form() -> None:
@@ -160,11 +215,44 @@ async def test_empty_description_does_not_close_form() -> None:
         assert isinstance(app.screen, TaskForm)
 
 
+async def test_form_ignores_unrelated_button() -> None:
+    app = TaskwarriorApp(client=FakeUiClient())
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("a")
+        await pilot.pause()
+        form = app.screen
+        form.on_button_pressed(Button.Pressed(Button("Other", id="other")))
+        assert isinstance(app.screen, TaskForm)
+
+
+async def test_inspect_success() -> None:
+    client = FakeUiClient()
+    app = TaskwarriorApp(client=client)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert ("information", TASK.short_uuid) in client.calls
+        assert "task information" in str(app.query_one("#details").render())
+
+
+async def test_inspect_error_is_rendered() -> None:
+    client = FakeUiClient()
+    client.fail = "information"
+    app = TaskwarriorApp(client=client)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert "information failed" in str(app.query_one("#details").render())
+
+
 async def test_delete_key_opens_confirmation_screen() -> None:
     app = TaskwarriorApp(client=FakeUiClient())
     async with app.run_test() as pilot:
         await pilot.pause()
-        await pilot.press("D")
+        await pilot.press("shift+d")
         await pilot.pause()
         assert isinstance(app.screen, ConfirmDelete)
         assert app.screen.target_task == TASK
@@ -175,7 +263,7 @@ async def test_delete_confirmation_calls_client() -> None:
     app = TaskwarriorApp(client=client)
     async with app.run_test() as pilot:
         await pilot.pause()
-        await pilot.press("D")
+        await pilot.press("shift+d")
         await pilot.pause()
         screen = app.screen
         screen.on_button_pressed(Button.Pressed(screen.query_one("#delete", Button)))
@@ -188,12 +276,26 @@ async def test_delete_cancel_does_not_call_client() -> None:
     app = TaskwarriorApp(client=client)
     async with app.run_test() as pilot:
         await pilot.pause()
-        await pilot.press("D")
+        await pilot.press("shift+d")
         await pilot.pause()
         screen = app.screen
         screen.on_button_pressed(Button.Pressed(screen.query_one("#cancel", Button)))
         await pilot.pause()
     assert ("delete", TASK.short_uuid) not in client.calls
+
+
+async def test_delete_error_is_rendered() -> None:
+    client = FakeUiClient()
+    client.fail = "delete"
+    app = TaskwarriorApp(client=client)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("shift+d")
+        await pilot.pause()
+        screen = app.screen
+        screen.on_button_pressed(Button.Pressed(screen.query_one("#delete", Button)))
+        await pilot.pause()
+        assert "delete failed" in str(app.query_one("#details").render())
 
 
 async def test_lifecycle_keys_call_client_with_short_uuid() -> None:
@@ -203,15 +305,15 @@ async def test_lifecycle_keys_call_client_with_short_uuid() -> None:
         await pilot.pause()
         await pilot.press("s")
         await pilot.press("x")
-        await pilot.press("d")
         await pilot.press("enter")
         await pilot.press("y")
+        await pilot.press("d")
         await pilot.pause()
     assert ("start", TASK.short_uuid) in client.calls
     assert ("stop", TASK.short_uuid) in client.calls
-    assert ("done", TASK.short_uuid) in client.calls
     assert ("information", TASK.short_uuid) in client.calls
     assert ("sync", "") in client.calls
+    assert ("done", TASK.short_uuid) in client.calls
 
 
 async def test_backend_error_is_rendered_in_details() -> None:
@@ -222,8 +324,18 @@ async def test_backend_error_is_rendered_in_details() -> None:
         await pilot.pause()
         await pilot.press("s")
         await pilot.pause()
-        details = app.query_one("#details")
-        assert "start failed" in str(details.render())
+        assert "start failed" in str(app.query_one("#details").render())
+
+
+async def test_sync_error_is_rendered() -> None:
+    client = FakeUiClient()
+    client.fail = "sync"
+    app = TaskwarriorApp(client=client)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+        assert "sync failed" in str(app.query_one("#details").render())
 
 
 async def test_pending_error_does_not_crash_app() -> None:
@@ -232,5 +344,12 @@ async def test_pending_error_does_not_crash_app() -> None:
     app = TaskwarriorApp(client=client)
     async with app.run_test() as pilot:
         await pilot.pause()
-        details = app.query_one("#details")
-        assert "pending failed" in str(details.render())
+        assert "pending failed" in str(app.query_one("#details").render())
+
+
+def test_run_launches_application(monkeypatch) -> None:
+    launched = []
+    monkeypatch.setattr(app_module, "TaskwarriorClient", lambda: FakeUiClient())
+    monkeypatch.setattr(TaskwarriorApp, "run", lambda self: launched.append(True))
+    app_module.run()
+    assert launched == [True]
