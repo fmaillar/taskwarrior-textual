@@ -39,6 +39,7 @@ class Task:
     end: str = ""
     entry: str = ""
     estimate_hours: float = 0.0
+    estimate_defined: bool = False
 
     @property
     def short_uuid(self) -> str:
@@ -71,9 +72,19 @@ class Task:
         return format_taskwarrior_datetime(self.end)
 
     @property
+    def has_estimate(self) -> bool:
+        """Return whether an estimate is explicitly defined."""
+        return self.estimate_defined or self.estimate_hours != 0
+
+    @property
+    def is_milestone(self) -> bool:
+        """Return whether this is an explicit zero-duration milestone."""
+        return self.estimate_defined and self.estimate_hours == 0
+
+    @property
     def display_estimate(self) -> str:
         """Return the planning estimate in hours when present."""
-        if self.estimate_hours == 0:
+        if not self.has_estimate:
             return ""
         return f"{self.estimate_hours:.2f}h"
 
@@ -101,4 +112,5 @@ class Task:
             end=str(value.get("end", "")),
             entry=str(value.get("entry", "")),
             estimate_hours=float(value.get("estimate", 0.0)),
+            estimate_defined="estimate" in value and value.get("estimate") != "",
         )
