@@ -13,7 +13,7 @@ def format_taskwarrior_datetime(value: str) -> str:
     if not value:
         return ""
     try:
-        dt = datetime.strptime(value, "%Y%m%dT%H%M%SZ")
+        dt = datetime.strptime(value, "%Y%m%dT%H%M%S%z")
     except ValueError:
         return value
     if dt.hour == 0 and dt.minute == 0 and dt.second == 0:
