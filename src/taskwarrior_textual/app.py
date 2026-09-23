@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from typing import ClassVar
 
 from textual.app import App, ComposeResult
@@ -855,6 +857,8 @@ class TaskwarriorApp(App[None]):
     def _critical_path_summary(
         tasks: list[Task],
         settings: PlanningSettings | None = None,
+        *,
+        now: datetime | None = None,
     ) -> str:
         """Compute a CPM schedule from resolved dependencies and estimates."""
         if not tasks:
@@ -868,7 +872,7 @@ class TaskwarriorApp(App[None]):
         unresolved = graph.unresolved
         order = list(graph.order)
 
-        schedule = build_relative_schedule(graph)
+        schedule = build_relative_schedule(graph, settings, now=now)
         assert schedule is not None
         earliest_start = schedule.earliest_start
         earliest_finish = schedule.earliest_finish
@@ -918,7 +922,7 @@ class TaskwarriorApp(App[None]):
                 f"{'milestone' if task.is_milestone else 'task'}"
             )
 
-        absolute = build_absolute_schedule(graph, settings)
+        absolute = build_absolute_schedule(graph, settings, now=now)
         if absolute is not None:
             deadline_rows = [
                 uuid
@@ -967,7 +971,12 @@ class TaskwarriorApp(App[None]):
         return "\n".join(lines)
 
     @staticmethod
-    def _gantt_summary(tasks: list[Task]) -> str:
+    def _gantt_summary(
+        tasks: list[Task],
+        settings: PlanningSettings | None = None,
+        *,
+        now: datetime | None = None,
+    ) -> str:
         """Render an earliest-start dependency schedule as a compact ASCII Gantt."""
         if not tasks:
             return "No tasks in current view."
@@ -979,7 +988,7 @@ class TaskwarriorApp(App[None]):
         unresolved = graph.unresolved
         order = list(graph.order)
 
-        schedule = build_relative_schedule(graph)
+        schedule = build_relative_schedule(graph, settings, now=now)
         assert schedule is not None
         earliest_start = schedule.earliest_start
         earliest_finish = schedule.earliest_finish
@@ -1005,7 +1014,10 @@ class TaskwarriorApp(App[None]):
             elif not task.has_estimate:
                 bar = " " * offset + "·"
             else:
-                width = max(1, round(task.estimate_hours))
+                width = max(
+                    1,
+                    round(earliest_finish[uuid] - earliest_start[uuid]),
+                )
                 bar = " " * offset + "█" * width
             marker = "*" if uuid in critical else " "
             lines.append(
@@ -1388,7 +1400,9 @@ class TaskwarriorApp(App[None]):
         tasks = self._expanded_planning_tasks()
         if tasks is None:
             return
-        self.push_screen(GanttScreen(self._gantt_summary(tasks)))
+        self.push_screen(
+            GanttScreen(self._gantt_summary(tasks, self.planning_settings))
+        )
 
     def action_show_calendar_plan(self) -> None:
         """Show an absolute calendar schedule for the expanded graph."""
