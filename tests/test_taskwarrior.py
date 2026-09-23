@@ -247,6 +247,13 @@ class DependencyExpansionClient(TaskwarriorClient):
         return self.by_filter.get(dependency, [])
 
 
+def test_expand_dependencies_rejects_depth_below_unlimited_sentinel() -> None:
+    client = DependencyExpansionClient()
+
+    with pytest.raises(ValueError, match="dependency depth"):
+        client.expand_dependencies([], -2)
+
+
 def test_expand_dependencies_respects_depth_and_fetches_only_missing_tasks() -> None:
     root = Task(
         uuid="11111111-1111-1111-1111-111111111111",
