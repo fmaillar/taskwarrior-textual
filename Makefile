@@ -11,10 +11,11 @@ BUILD := $(VENV)/bin/python -m build
 COVERAGE := $(VENV)/bin/coverage
 PYTEST_JOBS ?= auto
 INSTALL_STAMP := $(VENV)/.taskwarrior-textual-installed
+PACKAGE_TEST_VENV := .venv-package-test
 
 REPORT_DIR := reports
 
-.PHONY: help venv install reinstall test test-serial coverage report lint typecheck package check push-reports clean
+.PHONY: help venv install reinstall test test-serial coverage report lint typecheck package verify-package check push-reports clean
 
 help:
 	@printf '%s\n' \
@@ -28,6 +29,7 @@ help:
 	  'make lint          Run Ruff' \
 	  'make typecheck     Run mypy over the package' \
 	  'make package       Build wheel and source distribution' \
+	  'make verify-package  Verify wheel installation in a clean virtualenv' \
 	  'make check         Run Ruff, mypy, tests/coverage, and package build' \
 	  'make push-reports  Always commit/push reports, even when tests fail' \
 	  'make clean         Remove generated local artifacts'
@@ -95,7 +97,19 @@ package: install
 	rm -rf dist
 	$(BUILD)
 
-check: report package
+verify-package: package
+	rm -rf "$(PACKAGE_TEST_VENV)"
+	$(PYTHON) -m venv "$(PACKAGE_TEST_VENV)"
+	"$(PACKAGE_TEST_VENV)/bin/pip" install dist/*.whl
+	@expected=$$($(VENV)/bin/python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])'); \
+	actual=$$("$(PACKAGE_TEST_VENV)/bin/taskwarrior-textual" --version); \
+	test "$$actual" = "taskwarrior-textual $$expected" || { \
+		echo "Package version mismatch: expected taskwarrior-textual $$expected, got $$actual"; \
+		exit 1; \
+	}
+	rm -rf "$(PACKAGE_TEST_VENV)"
+
+check: report verify-package
 push-reports: install
 	@set +e; \
 	$(MAKE) --no-print-directory report; \
@@ -119,4 +133,4 @@ push-reports: install
 	exit 0
 
 clean:
-	rm -rf htmlcov .coverage .pytest_cache .ruff_cache .mypy_cache build dist "$(REPORT_DIR)"
+	rm -rf htmlcov .coverage .pytest_cache .ruff_cache .mypy_cache build dist "$(REPORT_DIR)" "$(PACKAGE_TEST_VENV)"
