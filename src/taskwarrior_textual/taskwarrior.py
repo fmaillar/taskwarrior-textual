@@ -16,6 +16,15 @@ from typing import Any
 from .models import Task
 
 
+@dataclass(frozen=True, slots=True)
+class TimewarriorInterval:
+    """One Timewarrior interval matched to a unique Taskwarrior task."""
+
+    task_uuid: str
+    start: datetime
+    end: datetime
+
+
 class TaskwarriorError(RuntimeError):
     """Raised when the Taskwarrior CLI cannot be used successfully."""
 
@@ -87,15 +96,15 @@ class TaskwarriorClient:
             tags.add(task.project)
         return frozenset(tags)
 
-    def timewarrior_hours(
+    def timewarrior_intervals(
         self,
         tasks: list[Task],
         *,
         now: datetime | None = None,
-    ) -> dict[str, float]:
-        """Return tracked hours matched unambiguously to Taskwarrior tasks."""
+    ) -> tuple[TimewarriorInterval, ...]:
+        """Return valid Timewarrior intervals matched unambiguously to tasks."""
         if not self.timewarrior_command:
-            return {}
+            return ()
 
         raw = self._run_timewarrior(["export"])
         try:
@@ -115,7 +124,7 @@ class TaskwarriorClient:
         }
 
         resolved_now = now or datetime.now(UTC)
-        totals: dict[str, float] = {}
+        matched: list[TimewarriorInterval] = []
         for interval in payload:
             if not isinstance(interval, dict):
                 continue
@@ -129,16 +138,36 @@ class TaskwarriorClient:
             try:
                 start = datetime.strptime(start_text, "%Y%m%dT%H%M%S%z")
                 end_text = interval.get("end")
-                end = (
+                parsed_end = (
                     datetime.strptime(end_text, "%Y%m%dT%H%M%S%z")
                     if isinstance(end_text, str)
                     else resolved_now
                 )
             except ValueError:
                 continue
-            seconds = max(0.0, (end - start).total_seconds())
-            totals[task.uuid] = totals.get(task.uuid, 0.0) + seconds / 3600
+            matched.append(
+                TimewarriorInterval(
+                    task_uuid=task.uuid,
+                    start=start,
+                    end=max(start, parsed_end),
+                )
+            )
 
+        return tuple(matched)
+
+    def timewarrior_hours(
+        self,
+        tasks: list[Task],
+        *,
+        now: datetime | None = None,
+    ) -> dict[str, float]:
+        """Return tracked hours matched unambiguously to Taskwarrior tasks."""
+        totals: dict[str, float] = {}
+        for interval in self.timewarrior_intervals(tasks, now=now):
+            seconds = (interval.end - interval.start).total_seconds()
+            totals[interval.task_uuid] = (
+                totals.get(interval.task_uuid, 0.0) + seconds / 3600
+            )
         return totals
 
     def export(self, *filters: str) -> list[Task]:
