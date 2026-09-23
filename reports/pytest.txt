@@ -3,31 +3,25 @@ platform linux -- Python 3.13.5, pytest-9.1.1, pluggy-1.6.0
 rootdir: /home/fgm/projets/taskwarrior-textual
 configfile: pyproject.toml
 testpaths: tests
-plugins: asyncio-1.4.0, cov-7.1.0
+plugins: asyncio-1.4.0, cov-7.1.0, xdist-3.8.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collected 263 items
+created: 4/4 workers
+4 workers [264 items]
 
-tests/test_app.py ...................................................... [ 20%]
-..........................................................               [ 42%]
-tests/test_config.py .......................................             [ 57%]
-tests/test_main.py ..                                                    [ 58%]
-tests/test_models.py ..............                                      [ 63%]
-tests/test_planning.py ....................................              [ 77%]
-tests/test_taskwarrior.py .............................................. [ 94%]
-..............                                                           [100%]
-
+........................................................................ [ 27%]
+........................................................................ [ 54%]
+........................................................................ [ 81%]
+................................................                         [100%]
 - generated xml file: /home/fgm/projets/taskwarrior-textual/reports/junit.xml --
 ================================ tests coverage ================================
 _______________ coverage: platform linux, python 3.13.5-final-0 ________________
 
-Name                             Stmts   Miss Branch BrPart  Cover   Missing
-----------------------------------------------------------------------------
-src/taskwarrior_textual/app.py     768      1    188      1    99%   1596
-----------------------------------------------------------------------------
-TOTAL                             1413      1    396      1    99%
+Name    Stmts   Miss Branch BrPart  Cover   Missing
+---------------------------------------------------
+TOTAL    1413      0    396      0   100%
 
-6 files skipped due to complete coverage.
+7 files skipped due to complete coverage.
 Coverage HTML written to dir htmlcov
 Coverage XML written to file reports/coverage.xml
-Required test coverage of 95.0% reached. Total coverage: 99.89%
-======================== 263 passed in 86.40s (0:01:26) ========================
+Required test coverage of 95.0% reached. Total coverage: 100.00%
+============================= 264 passed in 43.10s =============================
