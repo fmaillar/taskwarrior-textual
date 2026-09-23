@@ -774,20 +774,10 @@ class TaskwarriorApp(App[None]):
         if not tasks:
             return "No tasks in current view."
 
-        by_uuid = {task.uuid: task for task in tasks}
-        dependencies: dict[str, set[str]] = {}
-        dependents: dict[str, set[str]] = {task.uuid: set() for task in tasks}
-        unresolved: list[tuple[str, str]] = []
-
-        for task in tasks:
-            resolved: set[str] = set()
-            for dependency in task.depends:
-                if dependency in by_uuid:
-                    resolved.add(dependency)
-                    dependents[dependency].add(task.uuid)
-                else:
-                    unresolved.append((task.short_uuid, dependency[:8]))
-            dependencies[task.uuid] = resolved
+        graph = build_planning_graph(tasks)
+        by_uuid = graph.by_uuid
+        dependencies = graph.dependencies
+        unresolved = graph.unresolved
 
         remaining = set(by_uuid)
         layers: list[list[str]] = []
@@ -805,18 +795,8 @@ class TaskwarriorApp(App[None]):
             layers.append(ready)
             remaining.difference_update(ready)
 
-        cycle_nodes = set(remaining)
-        while cycle_nodes:
-            leaves = {
-                uuid
-                for uuid in cycle_nodes
-                if not (dependents[uuid] & cycle_nodes)
-            }
-            if not leaves:
-                break
-            cycle_nodes.difference_update(leaves)
-
-        blocked_by_cycle = remaining - cycle_nodes
+        cycle_nodes = graph.cycle_nodes
+        blocked_by_cycle = graph.blocked_by_cycle
         resolved_edges = sum(len(values) for values in dependencies.values())
         lines = [
             f"Tasks: {len(tasks)} | Resolved edges: {resolved_edges} | "
