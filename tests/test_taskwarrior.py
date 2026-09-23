@@ -29,6 +29,8 @@ class RecordingClient(TaskwarriorClient):
 
     def _run(self, args):  # type: ignore[override]
         self.calls.append(list(args))
+        if list(args) == ["_udas"]:
+            return "estimate\n"
         return "ok"
 
 
@@ -88,7 +90,9 @@ def test_add_builds_attributes() -> None:
         depends="11111111, 22222222",
         estimate="2.5",
     )
-    assert client.calls == [[
+    assert client.calls == [
+        ["_udas"],
+        [
         "add",
         "Example",
         "project:P",
@@ -100,7 +104,8 @@ def test_add_builds_attributes() -> None:
         "estimate:2.5",
         "+home",
         "+next",
-    ]]
+        ],
+    ]
 
 
 def test_add_omits_empty_attributes() -> None:
@@ -124,7 +129,9 @@ def test_modify_replaces_editable_fields() -> None:
         depends="11111111,22222222",
         estimate="3.75",
     )
-    assert client.calls == [[
+    assert client.calls == [
+        ["_udas"],
+        [
         "12345678",
         "modify",
         "description:Example task",
@@ -137,7 +144,8 @@ def test_modify_replaces_editable_fields() -> None:
         "estimate:3.75",
         "-rms",
         "+work",
-    ]]
+        ],
+    ]
 
 
 def test_modify_can_clear_optional_fields() -> None:
@@ -147,7 +155,9 @@ def test_modify_can_clear_optional_fields() -> None:
         "Example",
         previous_tags=("home", "next"),
     )
-    assert client.calls == [[
+    assert client.calls == [
+        ["_udas"],
+        [
         "12345678",
         "modify",
         "description:Example",
@@ -160,7 +170,8 @@ def test_modify_can_clear_optional_fields() -> None:
         "estimate:",
         "-home",
         "-next",
-    ]]
+        ],
+    ]
 
 
 def test_client_uses_environment_override(monkeypatch) -> None:
