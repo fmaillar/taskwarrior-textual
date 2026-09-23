@@ -1592,9 +1592,9 @@ def test_timewarrior_trend_week_and_month_compare_period_to_date() -> None:
 
     assert "Tracked in window: 4.00h" in week
     assert "Previous comparable: 2.00h" in week
-    assert "Tracked in window: 6.00h" in month
+    assert "Tracked in window: 8.00h" in month
     assert "Previous comparable: 4.00h" in month
-    assert "Change: +2.00h (+50.0%)" in month
+    assert "Change: +4.00h (+100.0%)" in month
 
 
 def test_timewarrior_trend_current_month_handles_december_year_boundary() -> None:
@@ -1693,7 +1693,9 @@ def test_timewarrior_trend_clips_to_requested_window_and_handles_no_activity() -
     )
 
     assert "Tracked in window: 0.00h" in summary
-    assert "Archive |" not in summary.split("Projects\n", 1)[1]
+    assert "Previous comparable: 2.00h" in summary
+    assert "Change: -2.00h (-100.0%)" in summary
+    assert "Archive | 0.00h | 2.00h | -2.00h" in summary.split("Projects\n", 1)[1]
 
 
 def test_timewarrior_trend_rejects_nonpositive_window() -> None:
