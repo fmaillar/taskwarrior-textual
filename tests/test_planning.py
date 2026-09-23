@@ -303,7 +303,8 @@ def test_build_absolute_schedule_applies_dependencies_scheduled_and_due() -> Non
     )
 
     schedule = build_absolute_schedule(
-        build_planning_graph([delayed, normal, first]), PlanningSettings(timezone="UTC")
+        build_planning_graph([delayed, normal, first]),
+        PlanningSettings(timezone="UTC"),
     )
 
     assert schedule is not None
@@ -380,7 +381,10 @@ def test_build_absolute_schedule_flags_scheduled_outside_working_calendar() -> N
         estimate_hours=1.0,
     )
 
-    schedule = build_absolute_schedule(build_planning_graph([invalid, anchor]), PlanningSettings(timezone="UTC"))
+    schedule = build_absolute_schedule(
+        build_planning_graph([invalid, anchor]),
+        PlanningSettings(timezone="UTC"),
+    )
 
     assert schedule is not None
     assert schedule.invalid_scheduled == ("cdcdcdcd",)
@@ -397,7 +401,10 @@ def test_build_absolute_schedule_treats_midnight_due_as_end_of_workday() -> None
         estimate_hours=8.0,
     )
 
-    schedule = build_absolute_schedule(build_planning_graph([task]), PlanningSettings(timezone="UTC"))
+    schedule = build_absolute_schedule(
+        build_planning_graph([task]),
+        PlanningSettings(timezone="UTC"),
+    )
 
     assert schedule is not None
     assert schedule.finishes[task.uuid] == datetime(2026, 9, 25, 17, 0, tzinfo=UTC)
@@ -429,7 +436,13 @@ def test_build_absolute_schedule_tracks_invalid_due_and_no_anchor() -> None:
         due="not-a-date",
         estimate_hours=1.0,
     )
-    assert build_absolute_schedule(build_planning_graph([no_anchor]), PlanningSettings(timezone="UTC")) is None
+    assert (
+        build_absolute_schedule(
+            build_planning_graph([no_anchor]),
+            PlanningSettings(timezone="UTC"),
+        )
+        is None
+    )
 
     anchor = Task(
         uuid="bbbbbbbb-1111-2222-3333-444444444444",
@@ -454,7 +467,8 @@ def test_build_absolute_schedule_tracks_invalid_due_and_no_anchor() -> None:
     )
 
     schedule = build_absolute_schedule(
-        build_planning_graph([invalid_start, invalid, anchor]), PlanningSettings(timezone="UTC")
+        build_planning_graph([invalid_start, invalid, anchor]),
+        PlanningSettings(timezone="UTC"),
     )
 
     assert schedule is not None
@@ -488,7 +502,8 @@ def test_build_absolute_schedule_skips_dependents_of_invalid_scheduled_task() ->
     )
 
     schedule = build_absolute_schedule(
-        build_planning_graph([child, invalid_parent, anchor]), PlanningSettings(timezone="UTC")
+        build_planning_graph([child, invalid_parent, anchor]),
+        PlanningSettings(timezone="UTC"),
     )
 
     assert schedule is not None
@@ -533,4 +548,10 @@ def test_build_absolute_schedule_returns_none_for_cycles() -> None:
         estimate_hours=1.0,
     )
 
-    assert build_absolute_schedule(build_planning_graph([first, second]), PlanningSettings(timezone="UTC")) is None
+    assert (
+        build_absolute_schedule(
+            build_planning_graph([first, second]),
+            PlanningSettings(timezone="UTC"),
+        )
+        is None
+    )
