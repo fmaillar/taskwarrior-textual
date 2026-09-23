@@ -99,6 +99,46 @@ class TaskForm(ModalScreen[dict[str, str] | None]):
             )
 
 
+class SearchForm(ModalScreen[str]):
+    """Modal text search over the currently loaded Taskwarrior view."""
+
+    BINDINGS = [("escape", "clear_search", "Clear search")]
+
+    CSS = """
+    SearchForm { align: center top; padding-top: 3; }
+    #search-box {
+        width: 70%;
+        max-width: 80;
+        height: auto;
+        padding: 1 2;
+        border: round $accent;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, initial_query: str = "") -> None:
+        super().__init__()
+        self.initial_query = initial_query
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="search-box"):
+            yield Label("Search description, project or tags")
+            yield Input(
+                value=self.initial_query,
+                placeholder="Search…",
+                id="search",
+            )
+
+    def on_mount(self) -> None:
+        self.query_one("#search", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value.strip())
+
+    def action_clear_search(self) -> None:
+        self.dismiss("")
+
+
 class ConfirmDelete(ModalScreen[bool]):
     """Confirm deletion of a task."""
 
@@ -151,7 +191,11 @@ class TaskwarriorApp(App[None]):
         ("2", "view_waiting", "Waiting"),
         ("3", "view_completed", "Completed"),
         ("4", "view_deleted", "Deleted"),
+        ("/", "search_tasks", "Search"),
+        ("t", "cycle_sort", "Sort"),
     ]
+
+    SORT_CYCLE = (None, "urgency", "when", "project", "priority")
 
     CSS = """
     #tasks { width: 2fr; }
@@ -162,7 +206,10 @@ class TaskwarriorApp(App[None]):
         super().__init__()
         self.client = client or TaskwarriorClient()
         self.tasks: dict[str, Task] = {}
+        self.view_tasks: list[Task] = []
         self.current_view = "pending"
+        self.search_query = ""
+        self.sort_key: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -206,6 +253,87 @@ class TaskwarriorApp(App[None]):
             f"{task.urgency:.2f}",
         )
 
+    @staticmethod
+    def _matches_search(task: Task, query: str) -> bool:
+        """Match a local query against description, project and tags."""
+        needle = query.casefold()
+        haystack = " ".join(
+            (task.description, task.project, " ".join(task.tags))
+        ).casefold()
+        return needle in haystack
+
+    @classmethod
+    def _sort_tasks(
+        cls,
+        tasks: list[Task],
+        sort_key: str | None,
+        view: str = "pending",
+    ) -> list[Task]:
+        """Return tasks in the deterministic order selected by the user."""
+        if sort_key is None:
+            return list(tasks)
+        if sort_key == "urgency":
+            return sorted(tasks, key=lambda task: (-task.urgency, task.short_uuid))
+        if sort_key == "when":
+            def when(task: Task) -> str:
+                if view == "waiting":
+                    return task.display_wait
+                if view in {"completed", "deleted"}:
+                    return task.display_end
+                return task.display_due
+
+            return sorted(
+                tasks,
+                key=lambda task: (not bool(when(task)), when(task), task.short_uuid),
+            )
+        if sort_key == "project":
+            return sorted(
+                tasks,
+                key=lambda task: (
+                    not bool(task.project),
+                    task.project.casefold(),
+                    task.short_uuid,
+                ),
+            )
+        priority_rank = {"H": 0, "M": 1, "L": 2}
+        return sorted(
+            tasks,
+            key=lambda task: (
+                priority_rank.get(task.priority, 3),
+                task.short_uuid,
+            ),
+        )
+
+    def _render_tasks(self) -> None:
+        """Render cached tasks after applying local search and sorting."""
+        table = self.query_one("#tasks", DataTable)
+        details = self.query_one("#details", Static)
+        table.clear()
+        self.tasks.clear()
+
+        visible = [
+            task
+            for task in self.view_tasks
+            if self._matches_search(task, self.search_query)
+        ]
+        visible = self._sort_tasks(visible, self.sort_key, self.current_view)
+
+        for task in visible:
+            self.tasks[task.short_uuid] = task
+            table.add_row(
+                *self._task_row(task, self.current_view),
+                key=task.short_uuid,
+            )
+
+        details.update(
+            f"{len(visible)}/{len(self.view_tasks)} {self.current_view} task(s)."
+        )
+
+    def _apply_search(self, query: str) -> None:
+        """Apply a local search without querying Taskwarrior again."""
+        self.search_query = query.strip()
+        self._render_tasks()
+
     def _selected_task(self) -> Task | None:
         table = self.query_one("#tasks", DataTable)
         if table.row_count == 0:
@@ -231,24 +359,13 @@ class TaskwarriorApp(App[None]):
         self.action_refresh_tasks()
 
     def action_refresh_tasks(self) -> None:
-        """Reload tasks from the currently selected Taskwarrior view."""
-        table = self.query_one("#tasks", DataTable)
-        details = self.query_one("#details", Static)
-        table.clear()
-        self.tasks.clear()
+        """Reload the current view, then reapply local search and sorting."""
         try:
-            tasks = self.client.view(self.current_view)
+            self.view_tasks = self.client.view(self.current_view)
         except TaskwarriorError as exc:
             self._show_error(exc)
             return
-
-        for task in tasks:
-            self.tasks[task.short_uuid] = task
-            table.add_row(
-                *self._task_row(task, self.current_view),
-                key=task.short_uuid,
-            )
-        details.update(f"{len(tasks)} {self.current_view} task(s).")
+        self._render_tasks()
 
     def _switch_view(self, name: str) -> None:
         """Select a named view and reload its tasks."""
@@ -266,6 +383,16 @@ class TaskwarriorApp(App[None]):
 
     def action_view_deleted(self) -> None:
         self._switch_view("deleted")
+
+    def action_search_tasks(self) -> None:
+        """Open local text search for the current view."""
+        self.push_screen(SearchForm(self.search_query), self._apply_search)
+
+    def action_cycle_sort(self) -> None:
+        """Cycle through deterministic local sort modes."""
+        index = self.SORT_CYCLE.index(self.sort_key)
+        self.sort_key = self.SORT_CYCLE[(index + 1) % len(self.SORT_CYCLE)]
+        self._render_tasks()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Inspect the row activated with Enter in the task table."""
