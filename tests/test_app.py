@@ -554,6 +554,31 @@ async def test_planning_actions_stop_when_dependency_expansion_fails(
         assert "expand_dependencies failed" in str(app.query_one("#details").render())
 
 
+@pytest.mark.parametrize(
+    ("key", "screen_type"),
+    [
+        ("shift+h", GanttScreen),
+        ("shift+l", CalendarPlanScreen),
+        ("shift+k", ConstraintsScreen),
+    ],
+)
+async def test_other_planning_actions_stop_when_timewarrior_fails(
+    key: str,
+    screen_type: type,
+) -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    client.fail = "timewarrior_hours"
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press(key)
+        await pilot.pause()
+
+        assert not isinstance(app.screen, screen_type)
+        assert "timewarrior_hours failed" in str(app.query_one("#details").render())
+
+
 async def test_critical_path_action_uses_timewarrior_tracked_hours() -> None:
     active = Task(
         uuid="abababab-1111-2222-3333-444444444444",
