@@ -6,23 +6,53 @@ testpaths: tests
 plugins: asyncio-1.4.0, cov-7.1.0, xdist-3.8.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
 created: 4/4 workers
-4 workers [319 items]
+4 workers [327 items]
 
 ........................................................................ [ 22%]
-........................................................................ [ 45%]
-........................................................................ [ 67%]
-........................................................................ [ 90%]
-...............................                                          [100%]
+..............................................F......................... [ 44%]
+........................................................................ [ 66%]
+........................................................................ [ 88%]
+.......................................                                  [100%]
+=================================== FAILURES ===================================
+___ test_project_dashboard_handles_defaults_active_state_and_missing_anchor ____
+[gw3] linux -- Python 3.13.5 /home/fgm/projets/taskwarrior-textual/.venv/bin/python3
+
+    def test_project_dashboard_handles_defaults_active_state_and_missing_anchor() -> None:
+        task = Task(
+            uuid="abababab-1111-1111-1111-111111111111",
+            description="Active unprojected",
+            status="pending",
+            project="",
+            start="20260923T070000Z",
+            estimate_hours=2.0,
+        )
+    
+        summary = TaskwarriorApp._project_dashboard(
+            "",
+            [task],
+            [task],
+        )
+    
+        assert "Project: (none)" in summary
+        assert "Active: 1" in summary
+>       assert "Planned finish: unavailable (no calendar anchor)" in summary
+E       AssertionError: assert 'Planned finish: unavailable (no calendar anchor)' in 'Project: (none)\nProject tasks: 1 | External dependencies: 0 | Active: 1 | Blocked: 0 | Unestimated: 0\nEstimate: 2.0... Tracked | Remaining | Due | Description\nabababab | project | active | 2.00h | 0.00h | 0.00h | — | Active unprojected'
+
+tests/test_app.py:2383: AssertionError
 - generated xml file: /home/fgm/projets/taskwarrior-textual/reports/junit.xml --
 ================================ tests coverage ================================
 _______________ coverage: platform linux, python 3.13.5-final-0 ________________
 
-Name    Stmts   Miss Branch BrPart  Cover   Missing
----------------------------------------------------
-TOTAL    1739      0    496      0   100%
+Name                             Stmts   Miss Branch BrPart  Cover   Missing
+----------------------------------------------------------------------------
+src/taskwarrior_textual/app.py    1083      0    264      1    99%   1844->1886
+----------------------------------------------------------------------------
+TOTAL                             1822      0    516      1    99%
 
-7 files skipped due to complete coverage.
+6 files skipped due to complete coverage.
 Coverage HTML written to dir htmlcov
 Coverage XML written to file reports/coverage.xml
-Required test coverage of 95.0% reached. Total coverage: 100.00%
-======================== 319 passed in 69.61s (0:01:09) ========================
+Required test coverage of 95.0% reached. Total coverage: 99.96%
+=========================== short test summary info ============================
+FAILED tests/test_app.py::test_project_dashboard_handles_defaults_active_state_and_missing_anchor
+=================== 1 failed, 326 passed in 62.63s (0:01:02) ===================
