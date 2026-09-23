@@ -179,6 +179,38 @@ class ProjectFilterForm(ModalScreen[str]):
         self.dismiss("")
 
 
+class DependencyScreen(ModalScreen[None]):
+    """Read-only local dependency neighborhood for one task."""
+
+    BINDINGS = [("escape", "close", "Close")]
+
+    CSS = """
+    DependencyScreen { align: center middle; }
+    #dependency-box {
+        width: 70%;
+        max-width: 90;
+        height: auto;
+        max-height: 80%;
+        padding: 1 2;
+        border: round $accent;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, title: str, body: str) -> None:
+        super().__init__()
+        self.title = title
+        self.body = body
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dependency-box"):
+            yield Label(self.title)
+            yield Static(self.body, id="dependency-body")
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 class ConfirmDelete(ModalScreen[bool]):
     """Confirm deletion of a task."""
 
@@ -236,6 +268,7 @@ class TaskwarriorApp(App[None]):
         ("t", "cycle_sort", "Sort"),
         ("p", "filter_project", "Project"),
         ("b", "toggle_blocked", "Blocked"),
+        ("g", "show_dependencies", "Dependencies"),
     ]
 
     SORT_CYCLE = (None, "urgency", "when", "project", "priority")
@@ -406,6 +439,33 @@ class TaskwarriorApp(App[None]):
         self.project_filter = project.strip()
         self._render_tasks()
 
+    @staticmethod
+    def _dependency_summary(task: Task, tasks: list[Task]) -> str:
+        """Describe dependency links that can be resolved from the current view."""
+        by_uuid = {candidate.uuid: candidate for candidate in tasks}
+        depends_on: list[str] = []
+        for dependency in task.depends:
+            known = by_uuid.get(dependency)
+            if known is None:
+                depends_on.append(dependency[:8])
+            else:
+                depends_on.append(f"{known.short_uuid} {known.description}")
+
+        required_by = [
+            f"{candidate.short_uuid} {candidate.description}"
+            for candidate in tasks
+            if task.uuid in candidate.depends
+        ]
+
+        sections: list[str] = []
+        if depends_on:
+            sections.append("Depends on\n" + "\n".join(depends_on))
+        if required_by:
+            sections.append("Required by\n" + "\n".join(required_by))
+        if not sections:
+            return "No dependencies in current view."
+        return "\n\n".join(sections)
+
     def _selected_task(self) -> Task | None:
         table = self.query_one("#tasks", DataTable)
         if table.row_count == 0:
@@ -480,6 +540,18 @@ class TaskwarriorApp(App[None]):
         """Toggle a local filter for tasks with unresolved dependencies."""
         self.blocked_only = not self.blocked_only
         self._render_tasks()
+
+    def action_show_dependencies(self) -> None:
+        """Show local dependency links for the selected task."""
+        task = self._selected_task()
+        if task is None:
+            return
+        self.push_screen(
+            DependencyScreen(
+                f"Dependencies for {task.short_uuid}",
+                self._dependency_summary(task, self.view_tasks),
+            )
+        )
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Inspect the row activated with Enter in the task table."""
