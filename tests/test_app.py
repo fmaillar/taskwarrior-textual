@@ -175,6 +175,14 @@ def test_task_row_uses_view_specific_date() -> None:
     assert TaskwarriorApp._task_row(task, "completed")[5] == "2026-09-25 17:00"
     assert TaskwarriorApp._task_row(task, "deleted")[5] == "2026-09-25 17:00"
 
+    scheduled = Task(
+        uuid="bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee",
+        description="Scheduled task",
+        status="pending",
+        scheduled="20260924T093000Z",
+    )
+    assert TaskwarriorApp._task_row(scheduled, "scheduled")[5] == "2026-09-24 09:30"
+
 
 def test_task_row_has_no_active_marker_for_inactive_task() -> None:
     task = Task(
@@ -490,6 +498,7 @@ async def test_numeric_keys_switch_views_and_refresh() -> None:
             ("2", "waiting"),
             ("3", "completed"),
             ("4", "deleted"),
+            ("5", "scheduled"),
             ("1", "pending"),
         ]:
             await pilot.press(key)
@@ -559,6 +568,25 @@ def test_sort_cycle_is_deterministic() -> None:
         task.short_uuid
         for task in TaskwarriorApp._sort_tasks(completed_tasks, "when", "deleted")
     ] == ["ffffffff", "99999999"]
+
+    scheduled_tasks = [
+        Task(
+            uuid="12121212-1111-2222-3333-444444444444",
+            description="Scheduled first",
+            status="pending",
+            scheduled="20260924T080000Z",
+        ),
+        Task(
+            uuid="34343434-1111-2222-3333-444444444444",
+            description="Scheduled later",
+            status="pending",
+            scheduled="20260925T080000Z",
+        ),
+    ]
+    assert [
+        task.short_uuid
+        for task in TaskwarriorApp._sort_tasks(scheduled_tasks, "when", "scheduled")
+    ] == ["12121212", "34343434"]
     assert [task.short_uuid for task in TaskwarriorApp._sort_tasks(SEARCH_TASKS, "project")] == [
         "aaaaaaaa",
         "bbbbbbbb",
