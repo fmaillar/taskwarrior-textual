@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta, tzinfo
+from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
@@ -107,6 +108,45 @@ class WorkingCalendar:
 
     settings: PlanningSettings
 
+    def _timezone(self) -> tzinfo:
+        if self.settings.timezone == "UTC":
+            return UTC
+        if self.settings.timezone != "local":
+            return ZoneInfo(self.settings.timezone)
+
+        try:
+            zoneinfo_root = Path("/usr/share/zoneinfo").resolve()
+            localtime = Path("/etc/localtime").resolve()
+            key = str(localtime.relative_to(zoneinfo_root))
+            return ZoneInfo(key)
+        except (OSError, ValueError, ZoneInfoNotFoundError):
+            return datetime.now().astimezone().tzinfo or UTC
+
+    def _localize(self, value: date, clock: time) -> datetime:
+        zone = self._timezone()
+        naive = datetime.combine(value, clock)
+        first = naive.replace(tzinfo=zone, fold=0)
+        second = naive.replace(tzinfo=zone, fold=1)
+
+        def valid(candidate: datetime) -> bool:
+            return (
+                candidate.astimezone(UTC)
+                .astimezone(zone)
+                .replace(tzinfo=None)
+                == naive
+            )
+
+        first_valid = valid(first)
+        second_valid = valid(second)
+        if not first_valid and not second_valid:
+            raise ValueError(f"DST-nonexistent local time: {naive.isoformat()}")
+        if first_valid and second_valid and first.utcoffset() != second.utcoffset():
+            raise ValueError(f"DST-ambiguous local time: {naive.isoformat()}")
+        return first if first_valid else second
+
+    def _local_date(self, value: datetime) -> date:
+        return value.astimezone(self._timezone()).date()
+
     def _is_working_date(self, value: date) -> bool:
         return (
             value.weekday() in self.settings.workdays
@@ -122,29 +162,33 @@ class WorkingCalendar:
             end_time = self.settings._parse_clock(end_text)
             periods.append(
                 (
-                    datetime.combine(value, start_time, tzinfo=UTC),
-                    datetime.combine(value, end_time, tzinfo=UTC),
+                    self._localize(value, start_time).astimezone(UTC),
+                    self._localize(value, end_time).astimezone(UTC),
                 )
             )
         return tuple(sorted(periods))
 
     def is_working_time(self, value: datetime) -> bool:
         """Return whether a datetime lies inside a configured working period."""
-        return any(start <= value < end for start, end in self._periods_for_date(value.date()))
+        instant = value.astimezone(UTC)
+        return any(
+            start <= instant < end
+            for start, end in self._periods_for_date(self._local_date(value))
+        )
 
     def next_working_time(self, value: datetime) -> datetime:
         """Return value itself when valid, otherwise the next working instant."""
         if self.is_working_time(value):
             return value
 
-        day = value.date()
-        probe = value
+        day = self._local_date(value)
+        probe: datetime | None = value.astimezone(UTC)
         while True:
             for start, _ in self._periods_for_date(day):
-                if start >= probe:
+                if probe is None or start >= probe:
                     return start
             day += timedelta(days=1)
-            probe = datetime.combine(day, time.min, tzinfo=UTC)
+            probe = None
 
     def add_working_hours(self, start: datetime, hours: float) -> datetime:
         """Add non-negative work duration, skipping breaks and non-working days."""
@@ -159,7 +203,7 @@ class WorkingCalendar:
         while True:
             period_end = next(
                 end
-                for period_start, end in self._periods_for_date(current.date())
+                for period_start, end in self._periods_for_date(self._local_date(current))
                 if period_start <= current < end
             )
             available = (period_end - current).total_seconds() / 3600
