@@ -116,6 +116,105 @@ class TaskForm(ModalScreen[dict[str, str] | None]):
             )
 
 
+class PlanningForm(ModalScreen[dict[str, str] | None]):
+    """Edit only planning metadata for one task."""
+
+    CSS = """
+    PlanningForm { align: center middle; }
+    #planning-form {
+        width: 86%;
+        max-width: 105;
+        height: auto;
+        max-height: 92%;
+        padding: 1 2;
+        border: round $accent;
+        background: $surface;
+    }
+    #planning-candidates {
+        height: auto;
+        max-height: 14;
+        margin: 1 0;
+    }
+    #planning-buttons { height: auto; margin-top: 1; }
+    #planning-buttons Button { margin-right: 1; }
+    """
+
+    def __init__(self, task: Task, candidates: list[Task]) -> None:
+        super().__init__()
+        self.task = task
+        self.candidates = candidates
+        rows = [
+            f"{candidate.short_uuid} | {candidate.project or '(none)'} | "
+            f"{candidate.description}"
+            for candidate in sorted(
+                candidates,
+                key=lambda item: (
+                    item.uuid == task.uuid,
+                    item.project.casefold(),
+                    item.short_uuid,
+                    item.uuid,
+                ),
+            )
+            if candidate.uuid != task.uuid
+        ]
+        self.candidate_body = (
+            "Dependency candidates\nUUID | Project | Description\n"
+            + ("\n".join(rows) if rows else "(none)")
+        )
+
+    def compose(self) -> ComposeResult:
+        task = self.task
+        with Vertical(id="planning-form"):
+            yield Label(
+                f"Planning: {task.short_uuid} — {task.description}"
+            )
+            yield Input(
+                value=task.display_due,
+                placeholder="Due: YYYY-MM-DD, tomorrow, ...",
+                id="planning-due",
+            )
+            yield Input(
+                value=task.display_wait,
+                placeholder="Wait: YYYY-MM-DD HH:MM, tomorrow, ...",
+                id="planning-wait",
+            )
+            yield Input(
+                value=task.display_scheduled,
+                placeholder="Scheduled: YYYY-MM-DD HH:MM, tomorrow, ...",
+                id="planning-scheduled",
+            )
+            yield Input(
+                value=",".join(dep[:8] for dep in task.depends),
+                placeholder="Dependencies: comma-separated UUIDs/prefixes",
+                id="planning-depends",
+            )
+            yield Input(
+                value=str(task.estimate_hours) if task.has_estimate else "",
+                placeholder="Estimate hours (0 = milestone; empty clears)",
+                id="planning-estimate",
+            )
+            yield Static(self.candidate_body, id="planning-candidates")
+            with Horizontal(id="planning-buttons"):
+                yield Button("Save planning", variant="primary", id="planning-save")
+                yield Button("Cancel", id="planning-cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "planning-cancel":
+            self.dismiss(None)
+            return
+        if event.button.id != "planning-save":
+            return
+        self.dismiss(
+            {
+                "due": self.query_one("#planning-due", Input).value.strip(),
+                "wait": self.query_one("#planning-wait", Input).value.strip(),
+                "scheduled": self.query_one("#planning-scheduled", Input).value.strip(),
+                "depends": self.query_one("#planning-depends", Input).value.strip(),
+                "estimate": self.query_one("#planning-estimate", Input).value.strip(),
+            }
+        )
+
+
 class SearchForm(ModalScreen[str]):
     """Modal text search over the currently loaded Taskwarrior view."""
 
@@ -613,6 +712,7 @@ class TaskwarriorApp(App[None]):
         ("enter", "inspect_task", "Inspect"),
         ("a", "add_task", "Add"),
         ("e", "edit_task", "Edit"),
+        ("shift+e", "edit_planning", "Planning"),
         ("s", "start_task", "Start"),
         ("x", "stop_task", "Stop"),
         ("d", "done_task", "Done"),
@@ -1708,6 +1808,39 @@ class TaskwarriorApp(App[None]):
         row_key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key
         return self.tasks.get(str(row_key.value))
 
+    @staticmethod
+    def _resolve_planning_dependencies(
+        value: str,
+        target: Task,
+        candidates: list[Task],
+    ) -> str:
+        """Resolve comma-separated UUID prefixes to deterministic full UUIDs."""
+        requested = [
+            part.strip()
+            for part in value.split(",")
+            if part.strip()
+        ]
+        resolved: list[str] = []
+        for prefix in requested:
+            matches = [
+                task
+                for task in candidates
+                if task.uuid.startswith(prefix)
+            ]
+            if target.uuid.startswith(prefix):
+                if any(task.uuid == target.uuid for task in matches):
+                    raise TaskwarriorError(
+                        f"task cannot depend on itself: {prefix}"
+                    )
+            if not matches:
+                raise TaskwarriorError(f"unknown dependency: {prefix}")
+            if len(matches) > 1:
+                raise TaskwarriorError(f"ambiguous dependency prefix: {prefix}")
+            uuid = matches[0].uuid
+            if uuid not in resolved:
+                resolved.append(uuid)
+        return ",".join(resolved)
+
     def _show_error(self, exc: Exception) -> None:
         self.query_one("#details", Static).update(
             f"[bold red]Taskwarrior error[/bold red]\n\n{exc}"
@@ -2053,6 +2186,39 @@ class TaskwarriorApp(App[None]):
             self.action_refresh_tasks()
 
         self.push_screen(TaskForm(task), save)
+
+    def action_edit_planning(self) -> None:
+        """Edit scheduling metadata and dependencies for the selected task."""
+        task = self._selected_task()
+        if task is None:
+            return
+        candidates = self._expanded_planning_tasks()
+        if candidates is None:
+            return
+
+        def save(values: dict[str, str] | None) -> None:
+            if values is None:
+                return
+            try:
+                resolved_depends = self._resolve_planning_dependencies(
+                    values["depends"],
+                    task,
+                    candidates,
+                )
+                self.client.modify_planning(
+                    task.short_uuid,
+                    due=values["due"],
+                    wait=values["wait"],
+                    scheduled=values["scheduled"],
+                    depends=resolved_depends,
+                    estimate=values["estimate"],
+                )
+            except TaskwarriorError as exc:
+                self._show_error(exc)
+                return
+            self.action_refresh_tasks()
+
+        self.push_screen(PlanningForm(task, candidates), save)
 
     def action_start_task(self) -> None:
         self._run_task_action(self.client.start)
