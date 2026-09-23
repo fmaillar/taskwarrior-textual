@@ -18,10 +18,10 @@ help:
 	  'make install       Install project + development dependencies' \
 	  'make test          Run pytest with the configured coverage gate' \
 	  'make coverage      Run tests and generate coverage reports' \
-	  'make report        Generate compact reports suitable for Git' \
+	  'make report        Generate compact reports and keep pytest exit status' \
 	  'make lint          Run Ruff' \
-	  'make check         Run lint + report' \
-	  'make push-reports  Generate, commit and push reports even if tests fail' \
+	  'make check         Run strict lint + tests/coverage checks' \
+	  'make push-reports  Always commit/push reports, even when tests fail' \
 	  'make clean         Remove generated local artifacts'
 
 venv:
@@ -63,14 +63,24 @@ check: lint report
 push-reports: install
 	@set +e; \
 	$(MAKE) --no-print-directory report; \
-	status=$$?; \
+	test_status=$$?; \
 	git add "$(REPORT_DIR)"; \
+	push_status=0; \
 	if git diff --cached --quiet -- "$(REPORT_DIR)"; then \
 		echo "No report changes to commit."; \
 	else \
-		git commit -m "Update test and coverage reports" && git push; \
+		git commit -m "Update test and coverage reports" || push_status=$$?; \
+		if [ $$push_status -eq 0 ]; then \
+			git push || push_status=$$?; \
+		fi; \
 	fi; \
-	exit $$status
+	echo "Test/coverage exit status: $$test_status"; \
+	if [ $$push_status -ne 0 ]; then \
+		echo "Report push failed with status $$push_status"; \
+		exit $$push_status; \
+	fi; \
+	echo "Reports pushed successfully."; \
+	exit 0
 
 clean:
 	rm -rf htmlcov .coverage .pytest_cache .ruff_cache "$(REPORT_DIR)"
