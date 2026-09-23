@@ -169,7 +169,6 @@ def test_build_planning_graph_handles_empty_input() -> None:
     assert graph.cyclic is False
 
 
-
 def test_build_relative_schedule_computes_cpm_values() -> None:
     foundation = Task(
         uuid="11111111-1111-1111-1111-111111111111",
@@ -269,7 +268,6 @@ def test_build_relative_schedule_handles_empty_graph() -> None:
     assert schedule.critical == frozenset()
 
 
-
 def test_parse_taskwarrior_datetime_accepts_utc_and_rejects_unknown() -> None:
     assert parse_taskwarrior_datetime("") is None
     assert parse_taskwarrior_datetime("tomorrow") is None
@@ -321,8 +319,6 @@ def test_build_absolute_schedule_applies_dependencies_scheduled_and_due() -> Non
     assert schedule.due_slack[delayed.uuid] == -17.0
     assert schedule.invalid_due == ()
     assert schedule.invalid_scheduled == ()
-
-
 
 
 def test_build_absolute_schedule_uses_configured_working_periods() -> None:
@@ -401,6 +397,7 @@ def test_build_absolute_schedule_flags_exact_due_outside_working_calendar() -> N
     assert schedule is not None
     assert schedule.invalid_due == ("34343434",)
     assert task.uuid not in schedule.due_slack
+
 
 def test_build_absolute_schedule_tracks_invalid_due_and_no_anchor() -> None:
     no_anchor = Task(
