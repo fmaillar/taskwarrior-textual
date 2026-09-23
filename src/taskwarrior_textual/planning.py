@@ -148,7 +148,7 @@ def build_planning_graph(tasks: list[Task]) -> PlanningGraph:
     )
 
 
-def _remaining_estimate_hours(
+def remaining_estimate_hours(
     task: Task,
     calendar: WorkingCalendar,
     now: datetime,
@@ -185,7 +185,7 @@ def build_relative_schedule(
     calendar = WorkingCalendar(resolved_settings)
     resolved_now = now or datetime.now(UTC)
     remaining_hours = {
-        uuid: _remaining_estimate_hours(
+        uuid: remaining_estimate_hours(
             task,
             calendar,
             resolved_now,
