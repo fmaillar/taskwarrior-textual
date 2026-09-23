@@ -21,7 +21,7 @@ help:
 	  'make report        Generate compact reports suitable for Git' \
 	  'make lint          Run Ruff' \
 	  'make check         Run lint + report' \
-	  'make push-reports  Commit and push reports/ to the current branch' \
+	  'make push-reports  Generate, commit and push reports even if tests fail' \
 	  'make clean         Remove generated local artifacts'
 
 venv:
@@ -60,14 +60,17 @@ lint: install
 
 check: lint report
 
-push-reports: report
-	git add "$(REPORT_DIR)"
-	@if git diff --cached --quiet -- "$(REPORT_DIR)"; then \
+push-reports: install
+	@set +e; \
+	$(MAKE) --no-print-directory report; \
+	status=$$?; \
+	git add "$(REPORT_DIR)"; \
+	if git diff --cached --quiet -- "$(REPORT_DIR)"; then \
 		echo "No report changes to commit."; \
 	else \
-		git commit -m "Update test and coverage reports"; \
-		git push; \
-	fi
+		git commit -m "Update test and coverage reports" && git push; \
+	fi; \
+	exit $$status
 
 clean:
 	rm -rf htmlcov .coverage .pytest_cache .ruff_cache "$(REPORT_DIR)"
