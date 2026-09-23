@@ -12,6 +12,81 @@ from textual.widgets import Button, DataTable, Input, Label, Static
 
 from .models import Task
 
+HELP_TEXT = """\
+Task actions
+  Enter   Inspect selected task
+  a       Add task
+  e       Edit ordinary task fields
+  E       Edit planning fields
+  s / x   Start / stop work
+  d / D   Complete / delete task
+  y       Synchronize Taskwarrior
+
+Views, search and filters
+  1..5    Pending / waiting / completed / deleted / scheduled
+  /       Search description, project or tags
+  p       Filter by project
+  f       Filter by tag
+  b       Toggle blocked tasks
+  v       Toggle active tasks
+  t       Cycle local sort
+  c       Clear local filters and sort
+  r       Refresh current Taskwarrior view
+
+Planning
+  g       Selected-task dependencies
+  G       Dependency graph
+  C       Critical path
+  H       Gantt
+  I       Planning health
+  L       Calendar plan
+  K       Scheduling constraints
+  M       Milestones
+  S       Auto-schedule selected project
+
+Projects and time
+  O       Interactive project cockpit
+  P       Project overview
+  T       Timewarrior effort report
+  R       Timewarrior trend
+
+General
+  ?       Open / close this help
+  Esc     Close current dialog
+  q       Quit
+"""
+
+
+class HelpScreen(ModalScreen[None]):
+    """Scrollable in-application reference for commands and key bindings."""
+
+    BINDINGS: ClassVar[list[Binding | tuple[str, str] | tuple[str, str, str]]] = [
+        ("escape", "close", "Close"),
+        Binding("question_mark", "close", "Close", key_display="?"),
+    ]
+
+    CSS = """
+    HelpScreen { align: center middle; }
+    #help-box {
+        width: 90%;
+        max-width: 100;
+        height: 90%;
+        padding: 1 2;
+        border: round $accent;
+        background: $surface;
+    }
+    #help-scroll { height: 1fr; margin-top: 1; overflow-y: auto; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="help-box"):
+            yield Label("taskwarrior-textual help")
+            with Vertical(id="help-scroll"):
+                yield Static(HELP_TEXT, id="help-body")
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
 
 class TaskForm(ModalScreen[dict[str, str] | None]):
     """Modal form used to add or edit a task."""

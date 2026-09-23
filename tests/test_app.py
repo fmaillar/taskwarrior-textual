@@ -14,6 +14,7 @@ from taskwarrior_textual.app import (
     DependencyOverviewScreen,
     DependencyScreen,
     GanttScreen,
+    HelpScreen,
     MilestonesScreen,
     PlanningForm,
     PlanningHealthScreen,
@@ -3835,6 +3836,47 @@ def test_sort_cycle_is_deterministic() -> None:
         "cccccccc",
     ]
     assert TaskwarriorApp._sort_tasks(SEARCH_TASKS, None) == SEARCH_TASKS
+
+
+async def test_question_mark_opens_help_with_complete_reference() -> None:
+    app = TaskwarriorApp(client=FakeUiClient(tasks=SEARCH_TASKS))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("question_mark")
+        await pilot.pause()
+
+        assert isinstance(app.screen, HelpScreen)
+        body = str(app.screen.query_one("#help-body").render())
+        assert "Task actions" in body
+        assert "Views, search and filters" in body
+        assert "Planning" in body
+        assert "Projects and time" in body
+        assert "Interactive project cockpit" in body
+        assert "Timewarrior trend" in body
+        assert "?       Open / close this help" in body
+
+
+async def test_help_closes_with_question_mark_and_escape() -> None:
+    app = TaskwarriorApp(client=FakeUiClient(tasks=SEARCH_TASKS))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("question_mark")
+        await pilot.pause()
+        assert isinstance(app.screen, HelpScreen)
+
+        await pilot.press("question_mark")
+        await pilot.pause()
+        assert not isinstance(app.screen, HelpScreen)
+
+        await pilot.press("question_mark")
+        await pilot.pause()
+        assert isinstance(app.screen, HelpScreen)
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, HelpScreen)
 
 
 async def test_search_key_opens_search_form_and_enter_filters_locally() -> None:

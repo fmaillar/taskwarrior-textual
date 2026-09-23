@@ -24,6 +24,7 @@ from .ui import (
     DependencyOverviewScreen,
     DependencyScreen,
     GanttScreen,
+    HelpScreen,
     MilestonesScreen,
     PlanningForm,
     PlanningHealthScreen,
@@ -46,6 +47,7 @@ class TaskwarriorApp(PlanningReportsMixin, App[None]):
     SUB_TITLE = "Taskwarrior 3 frontend"
 
     BINDINGS: ClassVar[list[Binding | tuple[str, str] | tuple[str, str, str]]] = [
+        Binding("question_mark", "show_help", "Help", key_display="?"),
         ("q", "quit", "Quit"),
         ("r", "refresh_tasks", "Refresh"),
         ("enter", "inspect_task", "Inspect"),
@@ -453,6 +455,10 @@ class TaskwarriorApp(PlanningReportsMixin, App[None]):
         """Select a named view and reload its tasks."""
         self.current_view = name
         self.action_refresh_tasks()
+
+    def action_show_help(self) -> None:
+        """Open the in-application key and feature reference."""
+        self.push_screen(HelpScreen())
 
     def action_view_pending(self) -> None:
         self._switch_view("pending")

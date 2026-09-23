@@ -40,6 +40,7 @@ TaskChampion
 ### Key bindings
 
 ```text
+?       help
 Enter   inspect
 r       refresh
 a       add
@@ -65,6 +66,13 @@ T       Timewarrior effort report
 R       Timewarrior trend (7/30 days, week, month)
 q       quit
 ```
+
+## In-application help
+
+Press `?` at any time in the main task view to open the scrollable help screen.
+It summarizes task actions, local views and filters, planning reports, project
+cockpit commands, Timewarrior commands, and general navigation. Press `?`
+again or `Esc` to close it.
 
 ## Command-line checks
 
