@@ -21,6 +21,10 @@ def test_task_from_export() -> None:
     assert task.urgency == 18.71
 
 
+def test_format_taskwarrior_datetime_empty_value() -> None:
+    assert format_taskwarrior_datetime("") == ""
+
+
 def test_format_taskwarrior_datetime_preserves_unknown_values() -> None:
     assert format_taskwarrior_datetime("tomorrow") == "tomorrow"
 
