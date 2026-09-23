@@ -77,10 +77,28 @@ def test_information_uses_uuid_prefix() -> None:
 
 def test_add_builds_attributes() -> None:
     client = RecordingClient()
-    client.add("Example", project="P", priority="M", due="2026-09-25")
-    assert client.calls == [
-        ["add", "Example", "project:P", "priority:M", "due:2026-09-25"]
-    ]
+    client.add(
+        "Example",
+        project="P",
+        priority="M",
+        due="2026-09-25",
+        tags="home, next,home",
+        wait="2026-09-24 08:00",
+        scheduled="2026-09-24 09:00",
+        depends="11111111, 22222222",
+    )
+    assert client.calls == [[
+        "add",
+        "Example",
+        "project:P",
+        "priority:M",
+        "due:2026-09-25",
+        "wait:2026-09-24 08:00",
+        "scheduled:2026-09-24 09:00",
+        "depends:11111111,22222222",
+        "+home",
+        "+next",
+    ]]
 
 
 def test_add_omits_empty_attributes() -> None:
@@ -97,6 +115,11 @@ def test_modify_replaces_editable_fields() -> None:
         project="Project",
         priority="H",
         due="2026-09-25",
+        tags="mail,work",
+        previous_tags=("mail", "rms"),
+        wait="2026-09-24 08:00",
+        scheduled="2026-09-24 09:00",
+        depends="11111111,22222222",
     )
     assert client.calls == [[
         "12345678",
@@ -105,12 +128,21 @@ def test_modify_replaces_editable_fields() -> None:
         "project:Project",
         "priority:H",
         "due:2026-09-25",
+        "wait:2026-09-24 08:00",
+        "scheduled:2026-09-24 09:00",
+        "depends:11111111,22222222",
+        "-rms",
+        "+work",
     ]]
 
 
 def test_modify_can_clear_optional_fields() -> None:
     client = RecordingClient()
-    client.modify("12345678", "Example")
+    client.modify(
+        "12345678",
+        "Example",
+        previous_tags=("home", "next"),
+    )
     assert client.calls == [[
         "12345678",
         "modify",
@@ -118,6 +150,11 @@ def test_modify_can_clear_optional_fields() -> None:
         "project:",
         "priority:",
         "due:",
+        "wait:",
+        "scheduled:",
+        "depends:",
+        "-home",
+        "-next",
     ]]
 
 
@@ -213,3 +250,17 @@ def test_unknown_view_is_rejected() -> None:
 
     with pytest.raises(ValueError, match="Unknown task view"):
         client.view("nonsense")
+
+
+def test_tag_parser_trims_deduplicates_and_preserves_order() -> None:
+    assert TaskwarriorClient._parse_list(" home, next,home ,, work ") == (
+        "home",
+        "next",
+        "work",
+    )
+
+
+def test_tag_delta_does_not_touch_unchanged_tags() -> None:
+    assert TaskwarriorClient._tag_modifications(
+        "mail,rms", ("mail", "rms")
+    ) == []
