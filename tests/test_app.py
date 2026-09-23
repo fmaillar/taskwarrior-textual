@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from textual.widgets import Button, Input
+from textual.widgets import Button, DataTable, Input
 
 from taskwarrior_textual import app as app_module
 from taskwarrior_textual.app import (
