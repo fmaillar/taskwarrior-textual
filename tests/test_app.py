@@ -7,6 +7,7 @@ from taskwarrior_textual.app import (
     ConfirmDelete,
     DependencyScreen,
     ProjectFilterForm,
+    ProjectOverviewScreen,
     SearchForm,
     TaskForm,
     TaskwarriorApp,
@@ -268,6 +269,58 @@ async def test_dependency_key_opens_local_dependency_screen_without_refetch() ->
         await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(app.screen, DependencyScreen)
+
+
+def test_project_overview_groups_current_view_deterministically() -> None:
+    summary = TaskwarriorApp._project_overview(SEARCH_TASKS)
+
+    assert summary.splitlines() == [
+        "Project | Tasks | Active | Blocked | Urgency",
+        "Docs | 1 | 0 | 0 | 4.00",
+        "Infra | 1 | 0 | 1 | 12.00",
+        "(none) | 1 | 0 | 0 | 1.00",
+    ]
+
+
+def test_project_overview_counts_active_tasks() -> None:
+    active = Task(
+        uuid="dddddddd-1111-2222-3333-444444444444",
+        description="Active project task",
+        status="pending",
+        project="Infra",
+        start="20260923T070000Z",
+        urgency=3.5,
+    )
+
+    summary = TaskwarriorApp._project_overview([*SEARCH_TASKS, active])
+
+    assert "Infra | 2 | 1 | 1 | 15.50" in summary
+
+
+def test_project_overview_handles_empty_view() -> None:
+    assert TaskwarriorApp._project_overview([]) == "No tasks in current view."
+
+
+async def test_project_overview_key_opens_local_screen_without_refetch() -> None:
+    client = FakeUiClient(tasks=SEARCH_TASKS)
+    app = TaskwarriorApp(client=client)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        initial_view_calls = client.calls.count(("view", "pending"))
+
+        await pilot.press("shift+p")
+        await pilot.pause()
+
+        assert isinstance(app.screen, ProjectOverviewScreen)
+        body = str(app.screen.query_one("#project-overview-body").render())
+        assert "Docs | 1 | 0 | 0 | 4.00" in body
+        assert "Infra | 1 | 0 | 1 | 12.00" in body
+        assert client.calls.count(("view", "pending")) == initial_view_calls
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, ProjectOverviewScreen)
 
 
 async def test_selected_task_is_none_with_empty_table() -> None:
